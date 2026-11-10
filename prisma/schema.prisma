@@ -1,0 +1,70 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+// One brand voice profile per shop. Used to steer every generation.
+model BrandVoice {
+  id         String   @id @default(cuid())
+  shop       String   @unique
+  brandName  String   @default("")
+  tone       String   @default("friendly")
+  audience   String   @default("")
+  length     String   @default("medium")
+  language   String   @default("English")
+  keywords   String   @default("")
+  avoidWords String   @default("")
+  updatedAt  DateTime @updatedAt
+}
+
+// Every AI draft, so merchants can review, apply and roll back.
+model Generation {
+  id                String    @id @default(cuid())
+  shop              String
+  productId         String
+  productTitle      String
+  previousHtml      String
+  previousSeoTitle  String?
+  previousSeoDesc   String?
+  descriptionHtml   String
+  seoTitle          String
+  seoDescription    String
+  highlights        String    @default("[]")
+  model             String
+  status            String    @default("draft") // draft | applied | reverted
+  createdAt         DateTime  @default(now())
+  appliedAt         DateTime?
+
+  @@index([shop, productId])
+  @@index([shop, createdAt])
+}
