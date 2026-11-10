@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import {
   useLoaderData,
@@ -12,6 +12,13 @@ import db from "../db.server";
 import { SCAN_LIMIT, scanProducts } from "../lib/products.server";
 import { isDemoMode } from "../lib/ai.server";
 import { GOOD_SCORE, scoreCopy, targetWords } from "../lib/health";
+import {
+  type BulkJob,
+  type BulkProduct,
+  MAX_BULK,
+  bulkSummary,
+  useBulkDrafts,
+} from "../lib/bulk";
 import {
   DateTime,
   capitalize,
@@ -132,6 +139,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   return {
     rows: filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    // Every match across pages, for "write drafts for all".
+    matching: filtered.map((r) => ({ id: r.numericId, title: r.title })),
     page,
     pageCount,
     resultCount: filtered.length,
@@ -155,8 +164,7 @@ export default function ProductsPage() {
   const navigation = useNavigation();
   const [, setParams] = useSearchParams();
   const loading =
-    navigation.state === "loading" &&
-    navigation.location.pathname === "/app";
+    navigation.state === "loading" && navigation.location.pathname === "/app";
 
   /** Changes one or more filters and goes back to page 1. */
   const setFilters = (next: Record<string, string>) =>
@@ -198,8 +206,34 @@ export default function ProductsPage() {
 
   const setView = (view: ViewId) =>
     setFilters({ view: view === "all" ? "" : view });
-  const filtered =
-    filters.q || filters.status || filters.view !== "all";
+  const filtered = filters.q || filters.status || filters.view !== "all";
+
+  // Bulk drafts: products the merchant ticked, and the list waiting for the
+  // confirmation dialog.
+  const bulk = useBulkDrafts();
+  const busy = Boolean(bulk.job?.running);
+  const [selected, setSelected] = useState<Map<string, string>>(new Map());
+  const [pending, setPending] = useState<BulkProduct[]>([]);
+  const toggle = (items: BulkProduct[], on: boolean) =>
+    setSelected((s) => {
+      const next = new Map(s);
+      items.forEach((i) => (on ? next.set(i.id, i.title) : next.delete(i.id)));
+      return next;
+    });
+  const pageItems = rows.map((r) => ({ id: r.numericId, title: r.title }));
+  const pageSelected = pageItems.filter((i) => selected.has(i.id)).length;
+  const jobStatus = new Map(bulk.job?.items.map((i) => [i.id, i.status]));
+
+  // Views where "write drafts for all of these" is a sensible shortcut.
+  const bulkView =
+    filters.view === "attention" ||
+    filters.view === "no-description" ||
+    filters.view === "missing-seo";
+
+  const confirmBulk = () => {
+    bulk.start(pending);
+    setSelected(new Map());
+  };
 
   return (
     <s-page heading="Products">
@@ -208,11 +242,8 @@ export default function ProductsPage() {
       </s-button>
 
       {data.demoMode && (
-        <s-banner tone="info" heading="Running in demo mode">
-          <s-paragraph>
-            No ANTHROPIC_API_KEY is set, so drafts come from a built-in
-            template. Add a key to your environment to have Claude write them.
-          </s-paragraph>
+        <s-banner tone="info" dismissible>
+          Demo mode: drafts come from a template until ANTHROPIC_API_KEY is set.
         </s-banner>
       )}
 
@@ -228,60 +259,125 @@ export default function ProductsPage() {
         </s-banner>
       )}
 
-      <s-query-container>
-        <s-grid
-          gridTemplateColumns="@container (inline-size > 640px) 1fr 1fr 1fr 1fr, @container (inline-size > 360px) 1fr 1fr, 1fr"
-          gap="base"
-        >
-          <Metric
-            label="Average copy score"
-            value={`${data.averageScore}`}
-            suffix="/ 100"
-            tone={
-              data.averageScore >= GOOD_SCORE
-                ? "success"
-                : data.averageScore >= 60
-                  ? "caution"
-                  : "critical"
-            }
-            sub={`Across ${data.scanned.toLocaleString()} products`}
-          />
-          <Metric
-            label="Need attention"
-            value={counts.attention.toLocaleString()}
-            sub="Show these products"
-            onClick={() => setView("attention")}
-            selected={filters.view === "attention"}
-          />
-          <Metric
-            label="Drafts to review"
-            value={counts.draft.toLocaleString()}
-            sub={counts.draft ? "Ready to apply" : "None waiting"}
-            onClick={() => setView("draft")}
-            selected={filters.view === "draft"}
-          />
-          <Metric
-            label="Descriptions applied"
-            value={data.appliedCount.toLocaleString()}
-            sub="Written with Descripta"
-            href="/app/history"
-          />
-        </s-grid>
-      </s-query-container>
+      {bulk.job && (
+        <BulkProgress
+          job={bulk.job}
+          onCancel={bulk.cancel}
+          onRetry={bulk.retryFailed}
+          onDismiss={bulk.dismiss}
+          onReview={() => {
+            bulk.dismiss();
+            setView("draft");
+          }}
+        />
+      )}
+
+      <BulkConfirm
+        products={pending}
+        demoMode={data.demoMode}
+        onConfirm={confirmBulk}
+      />
 
       <s-section padding="none" accessibilityLabel="Products">
+        <s-box padding="small" borderWidth="none none base none">
+          <s-query-container>
+            <s-grid
+              gridTemplateColumns="@container (inline-size > 560px) 1fr 1fr 1fr 1fr, 1fr 1fr"
+              gap="small-200"
+            >
+              <Metric
+                label="Average copy score"
+                value={`${data.averageScore}`}
+                suffix="/ 100"
+                tone={
+                  data.averageScore >= GOOD_SCORE
+                    ? "success"
+                    : data.averageScore >= 60
+                      ? "caution"
+                      : "critical"
+                }
+              />
+              <Metric
+                label="Need attention"
+                value={counts.attention.toLocaleString()}
+                onClick={() => setView("attention")}
+                selected={filters.view === "attention"}
+              />
+              <Metric
+                label="Drafts to review"
+                value={counts.draft.toLocaleString()}
+                onClick={() => setView("draft")}
+                selected={filters.view === "draft"}
+              />
+              <Metric
+                label="Descriptions applied"
+                value={data.appliedCount.toLocaleString()}
+                href="/app/history"
+              />
+            </s-grid>
+          </s-query-container>
+        </s-box>
+
         <s-box padding="base" paddingBlockEnd="none">
-          <s-stack direction="inline" gap="small-200">
-            {VIEWS.map((v) => (
-              <s-clickable-chip
-                key={v.id}
-                color={filters.view === v.id ? "strong" : "base"}
-                accessibilityLabel={`${v.label}, ${counts[v.id]} products`}
-                onClick={() => setView(v.id)}
-              >
-                {v.label} {counts[v.id]}
-              </s-clickable-chip>
-            ))}
+          <s-stack
+            direction="inline"
+            gap="small"
+            alignItems="center"
+            justifyContent="space-between"
+          >
+            <s-stack direction="inline" gap="small-200">
+              {VIEWS.map((v) => (
+                <s-clickable-chip
+                  key={v.id}
+                  color={filters.view === v.id ? "strong" : "base"}
+                  accessibilityLabel={`${v.label}, ${counts[v.id]} products`}
+                  onClick={() => setView(v.id)}
+                >
+                  {v.label} {counts[v.id]}
+                </s-clickable-chip>
+              ))}
+            </s-stack>
+
+            {selected.size > 0 ? (
+              <s-stack direction="inline" gap="small" alignItems="center">
+                <s-text>{selected.size} selected</s-text>
+                <s-button
+                  variant="tertiary"
+                  onClick={() => setSelected(new Map())}
+                >
+                  Clear
+                </s-button>
+                <s-button
+                  variant="primary"
+                  icon="wand"
+                  commandFor="bulk-confirm"
+                  command="--show"
+                  onClick={() =>
+                    setPending(
+                      [...selected].map(([id, title]) => ({ id, title })),
+                    )
+                  }
+                  {...(busy ? { disabled: true } : {})}
+                >
+                  Write {selected.size === 1 ? "draft" : "drafts"}
+                </s-button>
+              </s-stack>
+            ) : (
+              bulkView &&
+              data.matching.length > 0 && (
+                <s-button
+                  icon="wand"
+                  commandFor="bulk-confirm"
+                  command="--show"
+                  onClick={() => setPending(data.matching)}
+                  {...(busy ? { disabled: true } : {})}
+                >
+                  {data.matching.length > MAX_BULK
+                    ? `Write drafts for the first ${MAX_BULK}`
+                    : `Write drafts for all ${data.matching.length}`}
+                </s-button>
+              )
+            )}
           </s-stack>
         </s-box>
 
@@ -332,6 +428,18 @@ export default function ProductsPage() {
           </s-grid>
 
           <s-table-header-row>
+            <s-table-header>
+              <SelectBox
+                label="Select all products on this page"
+                checked={
+                  pageItems.length > 0 && pageSelected === pageItems.length
+                }
+                indeterminate={
+                  pageSelected > 0 && pageSelected < pageItems.length
+                }
+                onToggle={(on) => toggle(pageItems, on)}
+              />
+            </s-table-header>
             <s-table-header listSlot="primary">Product</s-table-header>
             <s-table-header listSlot="secondary">Copy score</s-table-header>
             <s-table-header listSlot="inline">Descripta</s-table-header>
@@ -349,16 +457,32 @@ export default function ProductsPage() {
                   : p.health.score < GOOD_SCORE
                     ? { label: "Improve", icon: "wand" as const }
                     : { label: "Rewrite", icon: "wand" as const };
+              const writing = jobStatus.get(p.numericId);
               return (
                 <s-table-row key={p.id}>
                   <s-table-cell>
-                    <s-stack direction="inline" gap="base" alignItems="center">
+                    <SelectBox
+                      label={`Select ${p.title}`}
+                      checked={selected.has(p.numericId)}
+                      onToggle={(on) =>
+                        toggle([{ id: p.numericId, title: p.title }], on)
+                      }
+                    />
+                  </s-table-cell>
+                  <s-table-cell>
+                    {/* A grid, not an inline stack: stacks wrap, which drops
+                        the text under the image when the preview is long. */}
+                    <s-grid
+                      gridTemplateColumns="auto minmax(0, 1fr)"
+                      gap="base"
+                      alignItems="center"
+                    >
                       <s-thumbnail
                         size="small"
                         src={p.imageUrl || undefined}
                         alt={p.imageAlt || p.title}
                       />
-                      <s-stack direction="block" gap="none">
+                      <s-stack direction="block" gap="none" minInlineSize="0">
                         <s-link href={`/app/products/${p.numericId}`}>
                           {p.title}
                         </s-link>
@@ -366,7 +490,7 @@ export default function ProductsPage() {
                           {p.snippet || "No description yet"}
                         </s-paragraph>
                       </s-stack>
-                    </s-stack>
+                    </s-grid>
                   </s-table-cell>
                   <s-table-cell>
                     <s-stack direction="block" gap="small-300">
@@ -383,7 +507,20 @@ export default function ProductsPage() {
                     </s-stack>
                   </s-table-cell>
                   <s-table-cell>
-                    {p.ai ? (
+                    {writing === "writing" || writing === "queued" ? (
+                      <s-stack
+                        direction="inline"
+                        gap="small-200"
+                        alignItems="center"
+                      >
+                        {writing === "writing" && (
+                          <s-spinner accessibilityLabel="Writing" size="base" />
+                        )}
+                        <s-text color="subdued">
+                          {writing === "writing" ? "Writing…" : "Queued"}
+                        </s-text>
+                      </s-stack>
+                    ) : p.ai ? (
                       <s-stack direction="block" gap="small-300">
                         <s-badge
                           tone={statusBadge(p.ai.status).tone}
@@ -423,7 +560,9 @@ export default function ProductsPage() {
                   </s-table-cell>
                   <s-table-cell>
                     <s-button
-                      variant={p.ai?.status === "draft" ? "secondary" : "tertiary"}
+                      variant={
+                        p.ai?.status === "draft" ? "secondary" : "tertiary"
+                      }
                       icon={action.icon}
                       onClick={() => navigate(`/app/products/${p.numericId}`)}
                     >
@@ -492,11 +631,251 @@ export default function ProductsPage() {
   );
 }
 
+/**
+ * A Polaris checkbox driven from React state. The checked state is set as a
+ * property because React 18 can only set attributes on custom elements.
+ */
+function SelectBox({
+  label,
+  checked,
+  indeterminate = false,
+  onToggle,
+}: {
+  label: string;
+  checked: boolean;
+  indeterminate?: boolean;
+  onToggle: (checked: boolean) => void;
+}) {
+  const element = useRef<HTMLInputElement | null>(null);
+  const listen = useElementEvents({
+    change: (e) =>
+      onToggle((e.currentTarget as unknown as HTMLInputElement).checked),
+  });
+  const ref = useCallback(
+    (node: Element | null) => {
+      element.current = node as HTMLInputElement | null;
+      listen(node);
+    },
+    [listen],
+  );
+  useEffect(() => {
+    if (!element.current) return;
+    element.current.checked = checked;
+    element.current.indeterminate = indeterminate;
+  }, [checked, indeterminate]);
+
+  return <s-checkbox ref={ref} accessibilityLabel={label} />;
+}
+
+function BulkConfirm({
+  products,
+  demoMode,
+  onConfirm,
+}: {
+  products: BulkProduct[];
+  demoMode: boolean;
+  onConfirm: () => void;
+}) {
+  const count = Math.min(products.length, MAX_BULK);
+  const drafts = count === 1 ? "1 draft" : `${count} drafts`;
+  const minutes = Math.max(1, Math.ceil((count * 20) / 2 / 60));
+
+  return (
+    <s-modal id="bulk-confirm" heading={`Write ${drafts}?`}>
+      <s-stack direction="block" gap="base">
+        <s-paragraph>
+          Descripta will write a new description and SEO listing for{" "}
+          {count === 1 ? "this product" : `these ${count} products`} in your
+          brand voice. It takes about {minutes}{" "}
+          {minutes === 1 ? "minute" : "minutes"}, and you can keep using the app
+          while it runs.
+        </s-paragraph>
+        <s-paragraph>
+          Drafts are saved for you to review. Nothing changes in your store
+          until you apply them.
+        </s-paragraph>
+        {products.length > MAX_BULK && (
+          <s-banner tone="info">
+            Only the first {MAX_BULK} of {products.length} products are written
+            in one run. Run it again for the rest.
+          </s-banner>
+        )}
+        <s-paragraph color="subdued">
+          {demoMode
+            ? "Demo mode: drafts come from the built-in template, so this costs nothing."
+            : "Each product uses one Claude API request."}
+        </s-paragraph>
+      </s-stack>
+      <s-button
+        slot="primary-action"
+        variant="primary"
+        commandFor="bulk-confirm"
+        command="--hide"
+        onClick={onConfirm}
+      >
+        Write {drafts}
+      </s-button>
+      <s-button
+        slot="secondary-actions"
+        commandFor="bulk-confirm"
+        command="--hide"
+      >
+        Cancel
+      </s-button>
+    </s-modal>
+  );
+}
+
+const BULK_STATUS = {
+  queued: { tone: "neutral", label: "Waiting" },
+  writing: { tone: "info", label: "Writing…" },
+  done: { tone: "success", label: "Draft ready" },
+  failed: { tone: "critical", label: "Failed" },
+  cancelled: { tone: "neutral", label: "Cancelled" },
+} as const;
+
+function BulkProgress({
+  job,
+  onCancel,
+  onRetry,
+  onDismiss,
+  onReview,
+}: {
+  job: BulkJob;
+  onCancel: () => void;
+  onRetry: () => void;
+  onDismiss: () => void;
+  onReview: () => void;
+}) {
+  const s = bulkSummary(job);
+  // The per-product list stays folded so the table stays in view.
+  const [open, setOpen] = useState(false);
+  const heading = job.running
+    ? job.cancelling
+      ? "Stopping after the current drafts"
+      : `Writing drafts: ${s.finished} of ${s.total}`
+    : s.failed
+      ? `${s.done} of ${s.total} drafts written, ${s.failed} failed`
+      : `${s.done} ${s.done === 1 ? "draft" : "drafts"} ready to review`;
+
+  return (
+    <s-section padding="none" accessibilityLabel="Bulk draft progress">
+      <s-box paddingBlock="small" paddingInline="base">
+        <s-stack direction="block" gap="small">
+          <s-stack
+            direction="inline"
+            gap="base"
+            alignItems="center"
+            justifyContent="space-between"
+          >
+            <s-stack direction="inline" gap="small" alignItems="center">
+              {job.running ? (
+                <s-spinner accessibilityLabel="Writing drafts" size="base" />
+              ) : (
+                <s-icon
+                  type={s.failed ? "alert-triangle" : "check-circle"}
+                  tone={s.failed ? "warning" : "success"}
+                />
+              )}
+              <s-text type="strong">{heading}</s-text>
+            </s-stack>
+            <s-button-group>
+              <s-button
+                slot="secondary-actions"
+                variant="tertiary"
+                onClick={() => setOpen((o) => !o)}
+              >
+                {open ? "Hide details" : "Show details"}
+              </s-button>
+              {job.running ? (
+                <s-button
+                  slot="secondary-actions"
+                  onClick={onCancel}
+                  {...(job.cancelling ? { disabled: true } : {})}
+                >
+                  Stop
+                </s-button>
+              ) : (
+                <>
+                  <s-button slot="secondary-actions" onClick={onDismiss}>
+                    Dismiss
+                  </s-button>
+                  {s.failed > 0 && (
+                    <s-button slot="secondary-actions" onClick={onRetry}>
+                      Retry {s.failed} failed
+                    </s-button>
+                  )}
+                  {s.done > 0 && (
+                    <s-button
+                      slot="primary-action"
+                      variant="primary"
+                      onClick={onReview}
+                    >
+                      Review drafts
+                    </s-button>
+                  )}
+                </>
+              )}
+            </s-button-group>
+          </s-stack>
+
+          <div
+            className="descripta-progress"
+            role="progressbar"
+            aria-valuenow={s.percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Bulk draft progress"
+          >
+            <div
+              className="descripta-progress__bar"
+              style={{ width: `${s.percent}%` }}
+            />
+          </div>
+
+          {open && (
+            <div className="descripta-bulk-list">
+              <s-stack direction="block" gap="small-200">
+                {job.items.map((item) => {
+                  const status = BULK_STATUS[item.status];
+                  return (
+                    <s-stack
+                      key={item.id}
+                      direction="inline"
+                      gap="small"
+                      alignItems="center"
+                      justifyContent="space-between"
+                    >
+                      <s-stack direction="block" gap="none">
+                        {item.status === "done" ? (
+                          <s-link href={`/app/products/${item.id}`}>
+                            {item.title}
+                          </s-link>
+                        ) : (
+                          <s-text>{item.title}</s-text>
+                        )}
+                        {item.error && (
+                          <s-text tone="critical">{item.error}</s-text>
+                        )}
+                      </s-stack>
+                      <s-badge tone={status.tone}>{status.label}</s-badge>
+                    </s-stack>
+                  );
+                })}
+              </s-stack>
+            </div>
+          )}
+        </s-stack>
+      </s-box>
+    </s-section>
+  );
+}
+
+/** One compact stat in the strip above the product list. */
 function Metric({
   label,
   value,
   suffix,
-  sub,
   tone,
   onClick,
   href,
@@ -505,34 +884,31 @@ function Metric({
   label: string;
   value: string;
   suffix?: string;
-  sub: string;
   tone?: "success" | "caution" | "critical";
   onClick?: () => void;
   href?: string;
   selected?: boolean;
 }) {
   const body = (
-    <s-stack direction="block" gap="small-200">
+    <s-stack direction="block" gap="none">
       <s-text color="subdued">{label}</s-text>
-      <s-stack direction="inline" gap="small-200" alignItems="baseline">
-        <s-heading>{value}</s-heading>
+      <s-stack direction="inline" gap="small-300" alignItems="center">
+        <s-text type="strong">{value}</s-text>
         {suffix && <s-text color="subdued">{suffix}</s-text>}
         {tone && (
-          <s-badge tone={tone} size="base">
+          <s-badge tone={tone}>
             {tone === "success" ? "Great" : tone === "caution" ? "Fair" : "Low"}
           </s-badge>
         )}
       </s-stack>
-      <s-text color="subdued">{sub}</s-text>
     </s-stack>
   );
 
   const box = {
-    padding: "base",
-    borderWidth: selected ? "large" : "base",
-    borderColor: selected ? "strong" : "base",
+    paddingBlock: "small-300",
+    paddingInline: "small",
     borderRadius: "base",
-    background: "base",
+    background: selected ? "strong" : "transparent",
   } as const;
 
   if (!onClick && !href) return <s-box {...box}>{body}</s-box>;

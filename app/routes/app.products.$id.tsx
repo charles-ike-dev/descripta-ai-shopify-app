@@ -9,14 +9,9 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
-import { generateCopy, isDemoMode } from "../lib/ai.server";
-import {
-  getProduct,
-  toGid,
-  toProductInput,
-  updateProductCopy,
-} from "../lib/products.server";
-import { getVoice } from "../lib/voice.server";
+import { isDemoMode } from "../lib/ai.server";
+import { createDraft } from "../lib/drafts.server";
+import { getProduct, toGid, updateProductCopy } from "../lib/products.server";
 import { sanitizeHtml } from "../lib/copy";
 import {
   DateTime,
@@ -80,28 +75,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     if (!product) throw new Error("Product not found");
 
     if (intent === "generate") {
-      const voice = await getVoice(session.shop);
-      const copy = await generateCopy(toProductInput(product), voice);
-      const saved = await db.generation.create({
-        data: {
-          shop: session.shop,
-          productId: gid,
-          productTitle: product.title,
-          previousHtml: product.descriptionHtml,
-          previousSeoTitle: product.seoTitle,
-          previousSeoDesc: product.seoDescription,
-          descriptionHtml: copy.descriptionHtml,
-          seoTitle: copy.seoTitle,
-          seoDescription: copy.seoDescription,
-          highlights: JSON.stringify(copy.highlights),
-          model: copy.model,
-        },
-      });
-      return {
-        ok: true,
-        intent,
-        draft: { id: saved.id, ...copy },
-      } satisfies ActionResult;
+      const draft = await createDraft(session.shop, product);
+      return { ok: true, intent, draft } satisfies ActionResult;
     }
 
     const generation = await db.generation.findFirst({
