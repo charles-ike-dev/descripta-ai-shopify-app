@@ -1,0 +1,319 @@
+<title>Descripta AI Demo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+/* Layout: an admin-style frame with the app inside; product list left, draft editor right. */
+:root {
+  --bg: #eef0f3;
+  --surface: #ffffff;
+  --sunken: #f6f7f9;
+  --ink: #1c2230;
+  --muted: #5c6577;
+  --line: #dde1e8;
+  --accent: #4b3fd1;
+  --accent-ink: #ffffff;
+  --accent-soft: #ecebfb;
+  --good: #16794a; --good-bg: #e3f4ea;
+  --warn: #8a5a00; --warn-bg: #fdf1d6;
+  --bad: #b42318; --bad-bg: #fde8e6;
+  --info: #1f5fbf; --info-bg: #e5eefc;
+  --chrome: #1d2230;
+  --chrome-ink: #c9cede;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12151c; --surface: #1b1f29; --sunken: #151922; --ink: #e8ebf2; --muted: #9aa3b5; --line: #2c3240;
+  --accent: #8f86ff; --accent-ink: #12151c; --accent-soft: #262447;
+  --good: #5fd39a; --good-bg: #173226; --warn: #f2c260; --warn-bg: #3a2e12; --bad: #ff8b80; --bad-bg: #3d1c1a; --info: #8ab4ff; --info-bg: #1b2a45;
+  --chrome: #0c0e13; --chrome-ink: #9aa3b5; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12151c; --surface: #1b1f29; --sunken: #151922; --ink: #e8ebf2; --muted: #9aa3b5; --line: #2c3240;
+  --accent: #8f86ff; --accent-ink: #12151c; --accent-soft: #262447;
+  --good: #5fd39a; --good-bg: #173226; --warn: #f2c260; --warn-bg: #3a2e12; --bad: #ff8b80; --bad-bg: #3d1c1a; --info: #8ab4ff; --info-bg: #1b2a45;
+  --chrome: #0c0e13; --chrome-ink: #9aa3b5; color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 40px; }
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 16px; }
+.note { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; color: var(--muted); font-size: 13px; }
+.note strong { color: var(--ink); font-family: var(--font-display); font-size: 18px; font-weight: 600; }
+.frame { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: 0 10px 30px rgba(20, 24, 40, .08); }
+.topbar { background: var(--chrome); color: var(--chrome-ink); display: flex; align-items: center; gap: 12px; padding: 10px 16px; font-size: 13px; }
+.dots { display: flex; gap: 6px; } .dots i { width: 10px; height: 10px; border-radius: 50%; background: #3a4052; display: block; }
+.store { margin-left: auto; opacity: .8; }
+.app { display: grid; grid-template-columns: 200px 1fr; min-height: 640px; }
+.nav { background: var(--sunken); border-right: 1px solid var(--line); padding: 14px 10px; display: grid; align-content: start; gap: 2px; }
+.nav .label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 10px 10px 4px; }
+.nav button { all: unset; cursor: pointer; padding: 7px 10px; border-radius: 8px; color: var(--ink); }
+.nav button[aria-current="page"] { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); font-weight: 600; }
+.nav button:focus-visible, .btn:focus-visible, .row:focus-visible, .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.brand { display: flex; align-items: center; gap: 8px; padding: 4px 10px 10px; font-family: var(--font-display); font-weight: 600; font-size: 15px; }
+.logo { width: 24px; height: 24px; border-radius: 7px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 13px; }
+main { padding: 20px 22px; min-width: 0; display: grid; gap: 16px; align-content: start; }
+.head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+h1 { font-family: var(--font-display); font-size: 22px; font-weight: 600; margin: 0; text-wrap: balance; }
+h2 { font-size: 14px; font-weight: 600; margin: 0; }
+.btn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; font-weight: 600; font-size: 13px;
+  background: var(--surface); border: 1px solid var(--line); color: var(--ink); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.btn[disabled] { opacity: .6; cursor: progress; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.stat { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 2px; align-content: start; }
+.stat span { color: var(--muted); font-size: 12px; }
+.stat b { font-family: var(--font-display); font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.card { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.card > header { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.card > .body { padding: 14px 16px; display: grid; gap: 12px; }
+.table { overflow-x: auto; }
+.row { display: grid; grid-template-columns: 40px minmax(160px, 1fr) 80px 60px 120px; gap: 12px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line); cursor: pointer; min-width: 520px; }
+.row:hover { background: var(--sunken); }
+.row.th { cursor: default; color: var(--muted); font-size: 12px; border-top: 0; }
+.row.th:hover { background: none; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.thumb { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--line); display: grid; place-items: center; font-size: 11px; font-weight: 700; color: var(--muted); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.b-good { background: var(--good-bg); color: var(--good); } .b-warn { background: var(--warn-bg); color: var(--warn); }
+.b-bad { background: var(--bad-bg); color: var(--bad); } .b-info { background: var(--info-bg); color: var(--info); }
+.b-neutral { background: var(--sunken); color: var(--muted); border: 1px solid var(--line); }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 240px; gap: 14px; align-items: start; }
+.copy { background: var(--sunken); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.copy p { margin: 0 0 8px; } .copy ul { margin: 0 0 8px; padding-left: 18px; }
+.empty { color: var(--muted); }
+.serp { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; }
+.serp small { color: var(--muted); } .serp b { color: var(--info); font-weight: 500; font-size: 15px; }
+.serp span { color: var(--muted); font-size: 13px; }
+label { display: grid; gap: 4px; font-size: 13px; font-weight: 500; }
+input, textarea, select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; width: 100%; }
+textarea { resize: vertical; }
+.hint { color: var(--muted); font-size: 12px; font-weight: 400; }
+.hint.over { color: var(--bad); }
+.facts { display: grid; gap: 6px; font-size: 13px; } .facts b { font-weight: 600; }
+.hist { display: grid; gap: 8px; font-size: 13px; }
+.hist div { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.tab { all: unset; cursor: pointer; padding: 5px 12px; font-size: 13px; }
+.tab[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.banner { background: var(--info-bg); color: var(--ink); border-radius: 10px; padding: 10px 14px; font-size: 13px; }
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--chrome); color: #fff; padding: 9px 16px; border-radius: 10px; font-size: 13px; }
+.spin { width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: s .7s linear infinite; }
+@keyframes s { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+@media (max-width: 1000px) { .split { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 720px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .nav { grid-auto-flow: column; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .nav .label { display: none; }
+  .stats { grid-template-columns: minmax(0, 1fr); }
+  main { padding: 16px 14px; }
+}
+</style>
+
+<div class="wrap">
+  <div class="note">
+    <strong>Descripta AI</strong>
+    <span>Interactive preview with sample products. In the real app, drafts are written by Claude and saved to Shopify.</span>
+  </div>
+
+  <div class="frame">
+    <div class="topbar"><div class="dots"><i></i><i></i><i></i></div><span>Store admin · Apps · Descripta AI</span><span class="store">northwind-goods.myshopify.com</span></div>
+    <div class="app">
+      <nav class="nav" aria-label="App">
+        <div class="brand"><span class="logo">D</span>Descripta AI</div>
+        <div class="label">App</div>
+        <button id="nav-products" aria-current="page">Products</button>
+        <button id="nav-voice">Brand voice</button>
+        <button id="nav-history">History</button>
+      </nav>
+      <main id="view"></main>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const products = [
+  { id: 1, title: "Everyday Canvas Tote", type: "Bag", vendor: "Northwind Goods", status: "active", tags: ["organic cotton", "carry"], options: [["Color", ["Sand", "Olive", "Black"]]], price: "35.00 GBP", handle: "everyday-canvas-tote",
+    html: "<p>Canvas tote bag.</p>", seoTitle: "", seoDesc: "" },
+  { id: 2, title: "Merino Crew Sweater", type: "Sweater", vendor: "Northwind Goods", status: "active", tags: ["merino", "winter"], options: [["Size", ["S", "M", "L", "XL"]], ["Color", ["Oat", "Navy"]]], price: "89.00 GBP", handle: "merino-crew-sweater",
+    html: "", seoTitle: "", seoDesc: "" },
+  { id: 3, title: "Stoneware Pour-Over Set", type: "Coffee set", vendor: "Kiln & Co", status: "active", tags: ["coffee", "gift"], options: [["Glaze", ["Chalk", "Charcoal"]]], price: "48.00 GBP", handle: "stoneware-pour-over-set",
+    html: "<p>Handmade stoneware dripper with matching cup. Each glaze is slightly different because every piece is fired by hand in small batches. Includes a reusable filter and a care card.</p><p>Dishwasher safe.</p>", seoTitle: "", seoDesc: "" },
+  { id: 4, title: "Waxed Field Jacket", type: "Jacket", vendor: "Northwind Goods", status: "draft", tags: ["outdoor"], options: [["Size", ["S", "M", "L"]]], price: "185.00 GBP", handle: "waxed-field-jacket",
+    html: "<p>Our waxed cotton field jacket keeps light rain out and softens with every wear. It has two bellows pockets, a corduroy collar and a two-way brass zip, and it can be re-waxed at home so it lasts for years. Cut with room for a sweater underneath, with a slightly longer back for cover on the bike.</p>", seoTitle: "Waxed Field Jacket | Northwind Goods", seoDesc: "Waxed cotton field jacket with corduroy collar and brass zip. Re-waxable and built to last." },
+  { id: 5, title: "Linen Napkins, Set of 4", type: "Table linen", vendor: "Northwind Goods", status: "active", tags: ["home", "linen"], options: [["Color", ["Natural", "Sage", "Rust"]]], price: "28.00 GBP", handle: "linen-napkins-set-of-4",
+    html: "<p>Set of four napkins.</p>", seoTitle: "", seoDesc: "" },
+];
+const voice = { brand: "Northwind Goods", tone: "friendly", audience: "city commuters who value simple, durable design", length: "medium", keywords: "organic cotton, made to last", avoid: "cheap, eco-friendly" };
+const history = [
+  { pid: 4, title: "Waxed Field Jacket", status: "applied", model: "claude-opus-5-5", when: "Today, 09:12" },
+];
+const drafts = {};
+let route = { name: "products" };
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const words = (h) => h.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
+function health(p) {
+  const w = words(p.html);
+  if (w === 0) return ["b-bad", "No description"];
+  if (w < 40) return ["b-warn", "Thin copy"];
+  if (!p.seoTitle || !p.seoDesc) return ["b-warn", "Missing SEO"];
+  return ["b-good", "Looks good"];
+}
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2200); }
+
+// Sample drafts, in the shape the real app gets back from Claude.
+const SAMPLES = {
+  1: { html: "<p>The Everyday Canvas Tote is the bag you reach for without thinking. Heavyweight organic cotton canvas holds its shape, and the long handles sit comfortably on the shoulder, even with a laptop and lunch inside.</p><ul><li>Organic cotton canvas, made to last</li><li>Fits a 15-inch laptop</li><li>Inner pocket for keys and cards</li><li>In Sand, Olive and Black</li></ul><p>Simple enough for the commute, sturdy enough for the weekend market.</p>",
+       seoTitle: "Organic Cotton Canvas Tote Bag | Northwind Goods", seoDesc: "A heavyweight organic cotton tote that fits a 15-inch laptop. Made to last, in Sand, Olive and Black." },
+  2: { html: "<p>Soft, warm and easy to wear, the Merino Crew Sweater is the layer you will keep coming back to. Fine merino wool regulates temperature, so it is cosy on a cold platform and comfortable on a warm train.</p><ul><li>Fine merino wool, made to last</li><li>Classic crew neck that works over a shirt</li><li>Sizes S to XL, in Oat and Navy</li></ul><p>Hand wash cool or use a wool cycle, and dry flat.</p>",
+       seoTitle: "Merino Crew Neck Sweater | Northwind Goods", seoDesc: "A soft merino wool crew sweater that keeps you warm without overheating. Sizes S to XL in Oat and Navy." },
+  3: { html: "<p>Slow down your morning with the Stoneware Pour-Over Set. Each dripper and cup is fired by hand in small batches, so the glaze on yours is one of a kind.</p><ul><li>Handmade stoneware dripper and matching cup</li><li>Reusable filter included</li><li>Dishwasher safe</li><li>In Chalk or Charcoal glaze</li></ul><p>A thoughtful gift for the coffee lover who has everything.</p>",
+       seoTitle: "Handmade Stoneware Pour-Over Coffee Set", seoDesc: "Hand-fired stoneware dripper and cup with a reusable filter. Dishwasher safe, in Chalk or Charcoal glaze." },
+  4: { html: "<p>Built for drizzle, bike rides and years of wear, the Waxed Field Jacket softens and gains character every time you put it on. Re-wax it at home and it keeps going.</p><ul><li>Waxed cotton that keeps light rain out</li><li>Corduroy collar and two-way brass zip</li><li>Two bellows pockets</li><li>Longer back for cover on the bike</li></ul>",
+       seoTitle: "Waxed Cotton Field Jacket | Northwind Goods", seoDesc: "A re-waxable cotton field jacket with corduroy collar, brass zip and bellows pockets. Made to last." },
+  5: { html: "<p>Bring a relaxed, lived-in feel to every meal with our Linen Napkins. Pure linen gets softer with each wash, and the generous size works for a weeknight dinner or a long Sunday lunch.</p><ul><li>Set of four pure linen napkins</li><li>Softer with every wash</li><li>In Natural, Sage and Rust</li></ul>",
+       seoTitle: "Linen Napkins, Set of 4 | Northwind Goods", seoDesc: "Pure linen napkins that get softer with every wash. A set of four in Natural, Sage or Rust." },
+};
+
+function renderProducts() {
+  const need = products.filter((p) => health(p)[1] !== "Looks good").length;
+  $("#view").innerHTML = `
+    <div class="head"><h1>Products</h1><button class="btn" id="to-voice">Set brand voice</button></div>
+    <div class="stats">
+      <div class="stat"><span>Products in store</span><b>${products.length}</b></div>
+      <div class="stat"><span>Need better copy</span><b>${need}</b></div>
+      <div class="stat"><span>AI drafts written</span><b>${history.length}</b><span>${history.filter((h) => h.status === "applied").length} applied</span></div>
+    </div>
+    <section class="card">
+      <header><h2>Catalog</h2><span class="hint">Sorted by last updated</span></header>
+      <div class="table" role="table">
+        <div class="row th" role="row"><span></span><span>Product</span><span>Status</span><span class="num">Words</span><span>Copy health</span></div>
+        ${products.map((p) => { const [c, l] = health(p); return `
+        <div class="row" role="row" tabindex="0" data-id="${p.id}">
+          <span class="thumb" aria-hidden="true">${esc(p.title.split(" ").map((w) => w[0]).slice(0, 2).join(""))}</span>
+          <span><b>${esc(p.title)}</b><br><span class="hint">${esc(p.type)} · ${esc(p.vendor)}</span></span>
+          <span><span class="badge ${p.status === "active" ? "b-good" : "b-neutral"}">${p.status}</span></span>
+          <span class="num">${words(p.html)}</span>
+          <span><span class="badge ${c}">${l}</span></span>
+        </div>`; }).join("")}
+      </div>
+    </section>`;
+  $("#to-voice").onclick = () => go({ name: "voice" });
+  document.querySelectorAll(".row[data-id]").forEach((r) => {
+    const open = () => go({ name: "product", id: +r.dataset.id });
+    r.onclick = open; r.onkeydown = (e) => { if (e.key === "Enter") open(); };
+  });
+}
+
+function serp(p, title, desc) {
+  return `<div class="serp"><small>Search result preview · /products/${esc(p.handle)}</small><b>${esc(title || p.title)}</b><span>${esc(desc || "No meta description set.")}</span></div>`;
+}
+
+function renderProduct(id) {
+  const p = products.find((x) => x.id === id);
+  const d = drafts[id];
+  const hist = history.filter((h) => h.pid === id);
+  $("#view").innerHTML = `
+    <div class="head">
+      <div><button class="btn" id="back" style="padding:4px 8px;margin-bottom:6px">← Products</button><h1>${esc(p.title)}</h1></div>
+      <button class="btn primary" id="gen">${d ? "Write another version" : "Write with AI"}</button>
+    </div>
+    <div class="split">
+      <section class="card"><header><h2>Current copy</h2><span class="badge ${health(p)[0]}">${health(p)[1]}</span></header>
+        <div class="body">${p.html ? `<div class="copy">${p.html}</div>` : `<p class="empty">This product has no description yet.</p>`}${serp(p, p.seoTitle, p.seoDesc)}</div></section>
+      <section class="card"><header><h2>AI draft</h2>${d ? `<div class="tabs"><button class="tab" id="t-prev" aria-pressed="${d.view !== "html"}">Preview</button><button class="tab" id="t-html" aria-pressed="${d.view === "html"}">Edit HTML</button></div>` : ""}</header>
+        <div class="body">${d ? `
+          ${d.view === "html" ? `<label for="f-html">Description HTML<textarea id="f-html" rows="10">${esc(d.html)}</textarea></label>` : `<div class="copy">${d.html}</div>`}
+          <label for="f-title">SEO title<input id="f-title" value="${esc(d.seoTitle)}"><span class="hint ${d.seoTitle.length > 60 ? "over" : ""}" id="c-title">${d.seoTitle.length} of 60 characters</span></label>
+          <label for="f-desc">Meta description<textarea id="f-desc" rows="3">${esc(d.seoDesc)}</textarea><span class="hint ${d.seoDesc.length > 155 ? "over" : ""}" id="c-desc">${d.seoDesc.length} of 155 characters</span></label>
+          <div id="serp-d">${serp(p, d.seoTitle, d.seoDesc)}</div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn primary" id="apply">Apply to product</button><span class="hint">Written by claude-opus-5-5</span></div>`
+        : `<p>Descripta reads this product's title, type, options, tags and current description, then writes new copy in your brand voice. Nothing changes in your store until you apply it.</p>`}</div></section>
+      <div style="display:grid;gap:14px">
+        <section class="card"><header><h2>Product facts used</h2></header><div class="body facts">
+          <span><b>Type:</b> ${esc(p.type)}</span><span><b>Vendor:</b> ${esc(p.vendor)}</span><span><b>Tags:</b> ${esc(p.tags.join(", "))}</span>
+          <span><b>Options:</b> ${esc(p.options.map(([n, v]) => `${n}: ${v.join(", ")}`).join(" · "))}</span><span><b>Price from:</b> ${esc(p.price)}</span></div></section>
+        <section class="card"><header><h2>Version history</h2></header><div class="body hist">
+          ${hist.length ? hist.map((h, i) => `<div><span>${esc(h.when)}<br><span class="hint">${esc(h.model)}</span></span><span style="display:flex;gap:6px;align-items:center"><span class="badge ${h.status === "applied" ? "b-good" : h.status === "draft" ? "b-info" : "b-neutral"}">${h.status}</span>${h.status === "applied" && i === 0 ? `<button class="btn" data-undo="${i}" style="padding:3px 8px">Undo</button>` : ""}</span></div>`).join("") : `<span class="hint">No drafts yet.</span>`}
+        </div></section>
+      </div>
+    </div>`;
+  $("#back").onclick = () => go({ name: "products" });
+  $("#gen").onclick = () => generate(p);
+  if (d) {
+    $("#t-prev").onclick = () => { d.view = "preview"; renderProduct(id); };
+    $("#t-html").onclick = () => { d.view = "html"; renderProduct(id); };
+    const html = $("#f-html"); if (html) html.oninput = () => (d.html = html.value.replace(/<(?!\/?(p|ul|ol|li|strong|em|br)\b)[^>]*>/gi, ""));
+    $("#f-title").oninput = (e) => { d.seoTitle = e.target.value; $("#c-title").textContent = `${d.seoTitle.length} of 60 characters`; $("#c-title").classList.toggle("over", d.seoTitle.length > 60); $("#serp-d").innerHTML = serp(p, d.seoTitle, d.seoDesc); };
+    $("#f-desc").oninput = (e) => { d.seoDesc = e.target.value; $("#c-desc").textContent = `${d.seoDesc.length} of 155 characters`; $("#c-desc").classList.toggle("over", d.seoDesc.length > 155); $("#serp-d").innerHTML = serp(p, d.seoTitle, d.seoDesc); };
+    $("#apply").onclick = () => {
+      p.prev = { html: p.html, seoTitle: p.seoTitle, seoDesc: p.seoDesc };
+      Object.assign(p, { html: d.html, seoTitle: d.seoTitle, seoDesc: d.seoDesc });
+      const h = history.find((x) => x.pid === id && x.status === "draft"); if (h) h.status = "applied";
+      delete drafts[id]; toast("Saved to Shopify"); renderProduct(id);
+    };
+  }
+  document.querySelectorAll("[data-undo]").forEach((b) => (b.onclick = () => {
+    if (p.prev) Object.assign(p, p.prev);
+    hist[0].status = "reverted"; toast("Previous copy restored"); renderProduct(id);
+  }));
+}
+
+function generate(p) {
+  const btn = $("#gen"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span> Writing…`;
+  setTimeout(() => {
+    const s = SAMPLES[p.id];
+    drafts[p.id] = { html: s.html, seoTitle: s.seoTitle, seoDesc: s.seoDesc, view: "preview" };
+    history.forEach((h) => { if (h.pid === p.id && h.status === "draft") h.status = "reverted"; });
+    history.unshift({ pid: p.id, title: p.title, status: "draft", model: "claude-opus-5-5", when: "Just now" });
+    toast("New draft ready"); renderProduct(p.id);
+  }, 1100);
+}
+
+function renderVoice() {
+  $("#view").innerHTML = `
+    <div class="head"><h1>Brand voice</h1><button class="btn primary" id="save">Save</button></div>
+    <div class="split" style="grid-template-columns:minmax(0,1fr) 280px">
+      <section class="card"><header><h2>How your store sounds</h2></header><div class="body">
+        <label for="v-brand">Brand name<input id="v-brand" value="${esc(voice.brand)}"></label>
+        <label for="v-tone">Tone<select id="v-tone">${[["friendly", "Friendly and warm"], ["luxury", "Premium and refined"], ["playful", "Playful and witty"], ["technical", "Technical and precise"], ["minimal", "Minimal and direct"]].map(([v, l]) => `<option value="${v}" ${v === voice.tone ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+        <label for="v-aud">Target audience<input id="v-aud" value="${esc(voice.audience)}"></label>
+        <label for="v-len">Description length<select id="v-len"><option value="short">Short (60 to 90 words)</option><option value="medium" selected>Medium (120 to 180 words)</option><option value="long">Long (220 to 300 words)</option></select></label>
+        <label for="v-kw">Keywords to include<input id="v-kw" value="${esc(voice.keywords)}"><span class="hint">Comma separated. Used naturally, never stuffed.</span></label>
+        <label for="v-avoid">Words and claims to avoid<input id="v-avoid" value="${esc(voice.avoid)}"><span class="hint">For example claims your legal team has not approved.</span></label>
+      </div></section>
+      <section class="card"><header><h2>Sample opening</h2></header><div class="body"><span class="hint">Everyday Canvas Tote</span><p id="sample" style="margin:0"></p></div></section>
+    </div>`;
+  const openers = { friendly: "The Everyday Canvas Tote is the bag that makes every day a little easier.", luxury: "Meet the Everyday Canvas Tote, a bag made with quiet confidence.", playful: "Say hello to the Everyday Canvas Tote, the bag you didn't know you needed.", technical: "The Everyday Canvas Tote is a bag engineered for reliable daily performance.", minimal: "Everyday Canvas Tote. Organic cotton. Made to last." };
+  const upd = () => { voice.tone = $("#v-tone").value; $("#sample").textContent = openers[voice.tone] + ` Built for ${$("#v-aud").value || "everyday shoppers"}.`; };
+  $("#v-tone").onchange = upd; $("#v-aud").oninput = upd; upd();
+  $("#save").onclick = () => { voice.brand = $("#v-brand").value; voice.audience = $("#v-aud").value; toast("Brand voice saved"); };
+}
+
+function renderHistory() {
+  $("#view").innerHTML = `<div class="head"><h1>History</h1></div>
+    <section class="card"><div class="table">
+      <div class="row th" style="grid-template-columns:minmax(160px,1fr) 100px 150px 120px"><span>Product</span><span>Status</span><span>Model</span><span>Created</span></div>
+      ${history.map((h) => `<div class="row" style="grid-template-columns:minmax(160px,1fr) 100px 150px 120px" tabindex="0" data-id="${h.pid}"><b>${esc(h.title)}</b><span><span class="badge ${h.status === "applied" ? "b-good" : h.status === "draft" ? "b-info" : "b-neutral"}">${h.status}</span></span><span class="hint">${esc(h.model)}</span><span class="hint">${esc(h.when)}</span></div>`).join("")}
+    </div></section>`;
+  document.querySelectorAll(".row[data-id]").forEach((r) => (r.onclick = () => go({ name: "product", id: +r.dataset.id })));
+}
+
+function go(r) {
+  route = r;
+  const nav = { products: "#nav-products", product: "#nav-products", voice: "#nav-voice", history: "#nav-history" };
+  document.querySelectorAll(".nav button").forEach((b) => b.removeAttribute("aria-current"));
+  $(nav[r.name]).setAttribute("aria-current", "page");
+  if (r.name === "products") renderProducts();
+  else if (r.name === "product") renderProduct(r.id);
+  else if (r.name === "voice") renderVoice();
+  else renderHistory();
+}
+$("#nav-products").onclick = () => go({ name: "products" });
+$("#nav-voice").onclick = () => go({ name: "voice" });
+$("#nav-history").onclick = () => go({ name: "history" });
+go({ name: "products" });
+</script>
