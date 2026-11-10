@@ -470,13 +470,19 @@ export default function ProductsPage() {
                     />
                   </s-table-cell>
                   <s-table-cell>
-                    <s-stack direction="inline" gap="base" alignItems="center">
+                    {/* A grid, not an inline stack: stacks wrap, which drops
+                        the text under the image when the preview is long. */}
+                    <s-grid
+                      gridTemplateColumns="auto minmax(0, 1fr)"
+                      gap="base"
+                      alignItems="center"
+                    >
                       <s-thumbnail
                         size="small"
                         src={p.imageUrl || undefined}
                         alt={p.imageAlt || p.title}
                       />
-                      <s-stack direction="block" gap="none">
+                      <s-stack direction="block" gap="none" minInlineSize="0">
                         <s-link href={`/app/products/${p.numericId}`}>
                           {p.title}
                         </s-link>
@@ -484,7 +490,7 @@ export default function ProductsPage() {
                           {p.snippet || "No description yet"}
                         </s-paragraph>
                       </s-stack>
-                    </s-stack>
+                    </s-grid>
                   </s-table-cell>
                   <s-table-cell>
                     <s-stack direction="block" gap="small-300">
