@@ -1,0 +1,6 @@
+name = "React Router"
+roles = ["frontend", "backend"]
+
+[commands]
+predev = "npx prisma generate"
+dev = "npx prisma migrate deploy && npx react-router dev"
