@@ -4,6 +4,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { authenticate } from "../shopify.server";
+import { BulkDraftsProvider } from "../lib/bulk";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
@@ -22,7 +23,9 @@ export default function App() {
         <s-link href="/app/voice">Brand voice</s-link>
         <s-link href="/app/history">History</s-link>
       </s-app-nav>
-      <Outlet />
+      <BulkDraftsProvider>
+        <Outlet />
+      </BulkDraftsProvider>
     </AppProvider>
   );
 }

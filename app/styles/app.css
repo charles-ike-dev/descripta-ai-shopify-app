@@ -93,3 +93,23 @@ body {
 .descripta-serp__empty {
   font-style: italic;
 }
+
+/* Bulk draft progress. */
+.descripta-progress {
+  height: 8px;
+  border-radius: 4px;
+  background: #e3e3e3;
+  overflow: hidden;
+}
+
+.descripta-progress__bar {
+  height: 100%;
+  border-radius: 4px;
+  background: #29845a;
+  transition: width 0.4s ease;
+}
+
+.descripta-bulk-list {
+  max-height: 260px;
+  overflow-y: auto;
+}
