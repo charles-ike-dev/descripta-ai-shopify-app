@@ -15,10 +15,22 @@ FAQs answer the questions that stop people buying ("Does it run small?", "Is it 
 
 ## Implementation
 
-1. **Metafield definition.** On install (or on first use), create a definition with `metafieldDefinitionCreate`: owner `PRODUCT`, namespace `$app:descripta`, key `faq`, type `json`, with storefront access set to `PUBLIC_READ` so Liquid can read it. Check the app-reserved namespace syntax and the access options in the Shopify AI Toolkit.
+1. **Metafield definition, declared in `shopify.app.toml`.** Shopify recommends declaring fixed definitions like this in the TOML file over calling `metafieldDefinitionCreate` at install. `npm run deploy` then applies it to every shop, with nothing to run per install:
+   ```toml
+   [product.metafields.app.faq]
+   type = "json"
+   name = "FAQ"
+   description = "Questions and answers written by Descripta AI"
+   access.admin = "merchant_read"        # merchants see it; edits go through the app so undo stays correct
+   access.storefront = "public_read"
+   ```
+   - This uses the bare **`$app`** namespace. The TOML file doesn't support `$app:sub` namespaces such as `$app:descripta`, so don't use those.
+   - In GraphQL, write with namespace `"$app"` and key `"faq"`.
+   - Definitions declared in TOML can't be changed through the Admin API, and each deploy can make at most 25 definition changes.
+   - `access.storefront` only controls the Storefront API. Liquid can read the metafield either way, but `public_read` keeps a headless storefront option open.
 2. **AI.** `generateFaq(product, voice)` with a Zod schema `{ items: { question: string; answer: string }[] }`. Prompt rules: only questions the facts can answer, with no invented policies (shipping, returns) unless they're given; answers of 1 to 3 sentences in the brand voice and language; no duplicates of what the description already says word for word.
-3. **Write.** `metafieldsSet` with the JSON value. Keep the previous value on a new `FaqDraft` model (shop, productId, items, previous, status) for undo. Add it to `deleteShopData`.
-4. **Theme extension.** `npm run shopify app generate extension -- --template theme_app_extension`. In `blocks/faq.liquid`, read `product.metafields['app--<app-id>--descripta'].faq.value` (check the exact key) and render `<details>/<summary>` items. Add a `<script type="application/ld+json">` block with `FAQPage` markup. Give the block settings for the heading text and whether to start expanded.
+3. **Write.** `metafieldsSet(metafields: [{ ownerId, namespace: "$app", key: "faq", type: "json", value }])`. Store the draft as a `Generation` row with `kind = "faq"` (shared decision 1): `payload` holds the new items and `previousPayload` holds the old value, or `null` if there was none. Undo writes the previous value back, or calls `metafieldsDelete` when there was none. Each FAQ generation counts as one `faq` unit (plan 08).
+4. **Theme extension.** `npm run shopify app generate extension -- --template theme_app_extension`. In `blocks/faq.liquid`, read the metafield and render `<details>/<summary>` items. For the bare `$app` namespace, the Liquid form is reported to be `product.metafields["$app"].faq.value`, but the docs don't confirm it. Check it on a dev store after the first deploy, and fall back to the resolved form `product.metafields["app--<app-id>"].faq.value` if needed. Write down whichever works in the block's code comments. Add a `<script type="application/ld+json">` block with `FAQPage` markup. Give the block settings for the heading text and whether to start expanded.
 5. **Sanitising.** Answers are plain text. Liquid's `escape` filter is used when rendering, and `json` is used for the JSON-LD.
 6. **Health.** An optional "No FAQ" issue, off by default, so it doesn't lower the score for merchants who don't use FAQs.
 

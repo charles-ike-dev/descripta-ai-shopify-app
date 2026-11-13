@@ -24,11 +24,11 @@ Send up to 3 product images to Claude alongside the facts, with a per-shop setti
      nodes { ... on MediaImage { id alt image { url(transform: { maxWidth: 1024 }) } } }
    }
    ```
-   Add `images: { id: string; url: string; alt: string | null }[]` to `ProductDetail`. Check the `media` query argument against the API docs. If it's not supported, filter on `mediaContentType` in code.
+   Add `images: { id: string; url: string; alt: string | null }[]` to `ProductDetail`. The `media` connection's `query` argument supports the `media_type` filter (confirmed for API 2026-10). Don't use `images` or `featuredImage`, because both are deprecated.
 2. **`ProductInput`.** Add `imageUrls?: string[]` in `app/lib/copy.ts`, and fill it in `toProductInput`.
 3. **`generateCopy`.** Build the user message as a content array: one `{ type: "image", source: { type: "url", url } }` block per image, then the text prompt. Shopify CDN URLs are public, so URL sources work without downloading them first.
 4. **Prompt.** Add to `SYSTEM_PROMPT`: *"Product photos may be attached. Describe only what is clearly visible, such as colour, shape, style and what's included. Do not infer materials, sizes or certifications from a photo. If a photo conflicts with the written facts, trust the facts."*
-5. **Setting.** Add `useImages Boolean @default(true)` to `BrandVoice`, with a checkbox in `app/routes/app.voice.tsx`. `getVoice` and `VoiceInput` carry it.
+5. **Setting.** Add `useImages Boolean @default(true)` to `ShopSettings` (shared decision 2 in the README; create the model here if this plan ships first), with a checkbox in `app/routes/app.voice.tsx`. `createDraft` reads it and passes it to `generateCopy`.
 6. **Cost.** A 1024×1024 image is roughly 1,400 input tokens. Three images add a few cents per draft with Opus. Mention this next to the setting.
 
 ## Edge cases

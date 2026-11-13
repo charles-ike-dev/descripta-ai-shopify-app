@@ -34,8 +34,8 @@ One brand voice for the whole store is too coarse. A clothing store wants "Fit &
    ```
    Add it to `deleteShopData`.
 2. **Matching (`app/lib/templates.server.ts`).** `pickTemplate(shop, product)`. Product type and tag can be checked from the product alone. Collection matching needs `collections(first: 10) { nodes { id } }` added to the product query.
-3. **Prompt.** When a template is used, add a `<structure>` block to `buildPrompt`: "Use these sections in this order, each as `<p><strong>Heading</strong></p>` followed by content. Skip a section if no facts support it, and don't invent content to fill it." Skipping empty sections is important, because it stops Claude making up sizing information just to fill a heading.
-4. **Sanitiser.** Check that `sanitizeHtml` keeps the section markup. If templates should use real headings, allow `<h3>` (and check how the store's theme styles them).
+3. **Prompt.** When a template is used, add a `<structure>` block to `buildPrompt`: "Use these sections in this order, each as an `<h3>` heading followed by content. Skip a section if no facts support it, and don't invent content to fill it." Skipping empty sections is important, because it stops Claude making up sizing information just to fill a heading.
+4. **Headings.** `sanitizeHtml` already allows `<h2>`, `<h3>` and `<h4>`, so templates can ask for real `<h3>` headings rather than bold paragraphs. Real headings are better for accessibility and SEO. Update the `descriptionHtml` description in `CopySchema` (which currently lists only `<p>`, `<ul>`, `<li>`, `<strong>` and `<em>`) to allow `<h3>` when a template is in use. Check how a few common themes style `<h3>` inside product descriptions.
 5. **Starter templates.** Offer presets to choose from (Apparel, Beauty, Home, Electronics, Food), so merchants don't start from an empty form.
 6. **Generation record.** Store `templateId` on `Generation` so History shows which template was used.
 

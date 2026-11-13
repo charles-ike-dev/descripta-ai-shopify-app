@@ -38,6 +38,7 @@ On the brand voice page, a **"Learn from my best products"** panel:
    Derive the enum values from `TONES` and `LENGTHS` so the lists can't drift apart.
 4. **Route.** Add an `infer` intent to the action in `app.voice.tsx`. It fetches each selected product's `descriptionHtml` with `getProduct`, rejects products with fewer than about 40 words ("Pick products with a full description"), calls `inferVoice` and returns the suggestions.
 5. **Demo mode.** Return fixed suggestions based on average word count, so the flow can still be shown.
+   The resource picker's `multiple: 3` (a number) limits the selection to 3 products (confirmed in the App Bridge docs). Each analysis counts as one `voice` unit (plan 08).
 6. **UI.** Add a "Style notes" textarea to the form so the field can also be edited by hand.
 
 ## Edge cases

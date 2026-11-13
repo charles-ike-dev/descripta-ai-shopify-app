@@ -18,32 +18,21 @@ Stores selling across borders with Shopify Markets need copy in each of their la
 
 ## Implementation
 
-1. **Scopes.** Add `read_translations,write_translations,read_locales` to `shopify.app.toml` and the `SCOPES` environment variable. This forces merchants to re-approve the app. Check the exact scope names in the Shopify AI Toolkit.
+1. **Scopes.** Add `read_translations,write_translations,read_locales` to `shopify.app.toml` and the `SCOPES` environment variable. All three are confirmed for API 2026-10:
+   - `read_locales` for `shopLocales`
+   - `read_translations` for `translatableResource`
+   - `write_translations` for `translationsRegister` and `translationsRemove`
+
+   This makes every merchant approve the app again, so bundle it with the other scope changes (shared decision 3).
 2. **Queries (`app/lib/translations.server.ts`).**
    - `shopLocales(published: true) { locale name primary }` returns the languages to offer, excluding the primary one.
-   - `translatableResource(resourceId: $id) { translatableContent { key value digest locale } translations(locale: $l) { key value outdated } }` gives the source text, its **digest** and any existing translations. The keys needed are `body_html`, `meta_title` and `meta_description`. `title` is optional, behind a setting.
-   - `translationsRegister(resourceId, translations: [{ key, locale, value, translatableContentDigest }])` publishes them. The digest must match the current source text, or Shopify rejects the translation.
+   - `translatableResource(resourceId: $id) { translatableContent { key value digest locale type } translations(locale: $l) { key value outdated } }` gives the source text, its **digest** and any existing translations. Product keys are `title`, `body_html`, `handle`, `product_type`, `meta_title` and `meta_description`. Translate `body_html`, `meta_title` and `meta_description`. `title` is optional, behind a setting. Never translate `handle`, because that changes the product's URLs.
+   - `translationsRegister(resourceId, translations: [{ key, locale, value, translatableContentDigest, marketId? }])` publishes them. The digest must match the current source text, or Shopify rejects the translation. Leave `marketId` out for shop-wide translations. Market-specific copy can come later.
 3. **AI.** Add `translateCopy(source, targetLocale, voice)` with a Zod schema `{ descriptionHtml, seoTitle, seoDescription }`. Prompt: translate and adapt to the local market rather than translating word for word, keep the tone and the HTML structure, keep the SEO length limits, and keep brand names and avoided claims out of the translation as well. Run `sanitizeHtml` on the output.
-4. **Schema.**
-   ```prisma
-   model TranslationDraft {
-     id        String   @id @default(cuid())
-     shop      String
-     resourceId String
-     locale    String
-     sourceDigest String
-     descriptionHtml String
-     seoTitle  String
-     seoDescription String
-     previous  String   // JSON of previous translation values, for undo
-     status    String   @default("draft")
-     createdAt DateTime @default(now())
-     @@index([shop, resourceId, locale])
-   }
-   ```
-   Add it to `deleteShopData`.
-5. **Out of date.** If Shopify reports `outdated: true`, or the stored `sourceDigest` differs from the current digest, mark that language as "Out of date" and offer to translate it again.
-6. **Undo.** Re-register the previous values. If there was no previous translation, use `translationsRemove`.
+4. **Storage.** Use `Generation` with `kind = "translation"` and `locale` set (shared decision 1). `payload` holds `{ body_html, meta_title, meta_description, sourceDigests }`, and `previousPayload` holds the translation values it replaced, or `null` if there were none. Add an index on `[shop, productId, kind, locale]`. Each language gets its own row, so it can be applied and undone on its own, and batches (plan 01) work across languages.
+5. **Quota.** Each language for each product counts as one `translation` unit (plan 08).
+6. **Out of date.** If Shopify reports `outdated: true`, or a stored digest in `sourceDigests` differs from the current digest, mark that language as "Out of date" and offer to translate it again.
+7. **Undo.** Re-register the previous values. If there was no previous translation, use `translationsRemove(resourceId, translationKeys, locales)`.
 
 ## Edge cases
 

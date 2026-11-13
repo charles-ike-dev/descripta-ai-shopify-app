@@ -47,13 +47,14 @@
 4. **Keeping it fresh.**
    - Subscribe to `products/update` and `products/delete` and upsert or delete one `ProductHealth` row each time. These handlers only *read* the product, so they can't cause a loop with the app's own `productUpdate`.
    - After apply or revert (plan 01), update the row straight away.
-   - Run a full rescan nightly, or on demand with a "Rescan catalog" button.
+   - Run a full rescan nightly (a scheduled task from plan 02), or on demand with a "Rescan catalog" button.
+   - Webhook handlers must reply within 5 seconds. A single-row upsert is fast enough. Anything heavier goes on the job queue.
 5. **Dashboard.** The loader in `app/routes/app._index.tsx` reads from `ProductHealth`, paginating with `skip`/`take` or a cursor, and using `orderBy: score`. Keep the live `scanProducts` path as a fallback until the first scan finishes ("Scanning your catalog… showing the 250 most recent for now").
 6. **Scoring.** Reuse `scoreCopy`. When the brand voice length changes, scores need recalculating. Store `words` (as in the schema above) and re-score with SQL, without refetching anything from Shopify.
 
 ## Edge cases
 
-- Only one bulk query can run per shop at a time. If one is already running, wait for it rather than failing.
+- Since API 2026-01, an app can run up to 5 bulk query operations per shop at the same time. Still allow only one catalog scan per shop (check `CatalogScan` for a running row), so a double-click doesn't start two.
 - Webhooks can arrive out of order. Ignore an update older than the stored `updatedAt`.
 - Catalogs with 100,000+ products: batch the upserts in transactions of about 500 rows.
 

@@ -22,15 +22,17 @@ The system prompt rightly forbids inventing materials, sizes and certifications.
    ```graphql
    category { fullName }
    metafields(first: 30) { nodes { namespace key type value definition { name } } }
-   variants(first: 20) { nodes { title sku weight weightUnit barcode } }
+   variants(first: 20) {
+     nodes { title sku barcode inventoryItem { measurement { weight { value unit } } } }
+   }
    ```
-   Check the field names (`category`, variant `weight`) in API 2027-01. Variant weight may have moved to `inventoryItem.measurement`.
+   Confirmed for API 2026-10: `category` returns a `TaxonomyCategory` with `fullName`. `ProductVariant` no longer has `weight` or `weightUnit`, so weight comes from `inventoryItem.measurement.weight`.
 2. **Filtering.** Keep metafields whose type is text, number, boolean, dimension, volume, weight or rating. Drop JSON, references and files. Leave out namespaces that start with `app--` or the shop's excluded list, and values over 500 characters.
 3. **Labels.** Use `definition.name` when there is one ("Material"). Otherwise humanise the key (`care_instructions` becomes "Care instructions"). For dimension and weight types, format the JSON value as "12 cm".
 4. **`ProductInput`.** Add `category?: string`, `attributes?: { label: string; value: string }[]` and `variantSummary?: string` (for example "S, M, L in Black and Navy; 250 g"). `buildPrompt` adds them to `facts`.
 5. **Prompt.** Tell Claude that attributes are verified facts and should be used where relevant.
 6. **UI.** On the product page, show `facts` as a definition list. Return it from the loader by building the same object `buildPrompt` uses (move it out into a `productFacts()` function, so the display and the prompt can't drift apart).
-7. **Setting.** Add `excludedNamespaces String @default("")` to `BrandVoice` (or `ShopSettings`).
+7. **Setting.** Add `excludedNamespaces String @default("")` to `ShopSettings` (shared decision 2 in the README).
 
 ## Edge cases
 

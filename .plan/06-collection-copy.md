@@ -14,7 +14,7 @@ Collection pages often rank better than product pages for broad searches ("linen
 
 ## Implementation
 
-1. **Generalise the data model.** Add `resourceType String @default("product")` to `Generation` and keep using `productId` as the resource GID (or rename it to `resourceId` in a migration). Index `[shop, resourceType, productId]`.
+1. **Generalise the data model.** Apply shared decision 1 from the README if it hasn't been done yet. Collections use `kind = "description"` and `resourceType = "collection"`, and keep using the existing description and SEO columns. Keep `productId` as the resource GID column (or rename it to `resourceId` in the same migration, since several plans now use it for things other than products). Index `[shop, resourceType, productId]`.
 2. **Queries (`app/lib/collections.server.ts`).**
    - List: `collections(first, query, sortKey: UPDATED_AT)` with `id title handle descriptionHtml seo { title description } image { url altText } productsCount { count }`.
    - Detail: add `ruleSet { rules { column relation condition } }` and `products(first: 15) { nodes { title productType vendor tags } }`.

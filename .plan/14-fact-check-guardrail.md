@@ -15,11 +15,11 @@ The system prompt tells Claude not to invent facts, but a prompt instruction giv
 - The review screen highlights unsupported and risky phrases in the draft with a tooltip explaining each one.
 - A **"Remove flagged claims"** button regenerates the draft with those claims banned (reusing plan 03's refine path).
 - A local check for the brand voice's **avoid words**, done with plain string matching, no AI needed.
-- A setting: "Block apply while there are unsupported claims" (off by default, with a warning instead).
+- A setting: "Block apply while there are unsupported claims" (`blockApplyOnFlags` on `ShopSettings`, off by default, with a warning instead).
 
 ## Implementation
 
-1. **AI (`app/lib/factcheck.server.ts`).** `checkClaims(facts, draft)`, using Haiku 4.5 (`claude-haiku-4-5-20251001`) with a Zod schema:
+1. **AI (`app/lib/factcheck.server.ts`).** `checkClaims(facts, draft)`, using Haiku 4.5 (`claude-haiku-4-5`) through the shared Haiku helper (shared decision 5 in the README). Haiku 4.5 rejects `output_config.effort`, so send only `output_config.format`. Use this Zod schema:
    ```ts
    z.object({ claims: z.array(z.object({
      text: z.string().describe("The exact phrase from the draft"),
@@ -28,7 +28,7 @@ The system prompt tells Claude not to invent facts, but a prompt instruction giv
    })) })
    ```
    The facts must be the same object the draft was written from. Reuse the `productFacts()` function from plan 12, or move it out of `buildPrompt` now.
-2. **When it runs.** Inside `createDraft`, straight after `generateCopy`. Store the result as `claims String @default("[]")` on `Generation`. In bulk runs it simply adds one cheap call per product.
+2. **When it runs.** Inside `createDraft`, straight after `generateCopy`. Store the result as `claims String @default("[]")` on `Generation`. In bulk runs it simply adds one cheap call per product. It's included in the draft's quota unit (plan 08), so it isn't counted separately. If the check itself fails, save the draft anyway with `claims = null` ("Not checked"), so a checker outage never blocks drafting.
 3. **Avoid words.** `findAvoidedWords(html, voice.avoidWords)` in `app/lib/copy.ts` does case-insensitive whole-word matching and shows its matches in the same list of flags.
 4. **Highlighting.** In the review panel, wrap each claim's `text` in `<mark>` in the preview only (never in the saved HTML). Match on plain text so tags in between don't break the match.
 5. **History and health.** Show a small "2 flagged" badge on drafts in the History list and the review queue (plan 01).

@@ -15,10 +15,12 @@ Merchants edit products on Shopify's own product page, not inside the app. Havin
 ## Implementation
 
 1. **Scaffold.** `npm run shopify app generate extension -- --template admin_action` and `--template admin_block`. They land in `extensions/`, which is already set up as a workspace in `package.json`. Use Preact and Polaris web components, as the current templates do.
-2. **Backend calls.** Extensions call the app server with `fetch("/app/api/…")`. Shopify automatically adds a session token to requests to the app's own URL, and `authenticate.admin(request)` accepts it. Check the exact flow for extensions in the Shopify AI Toolkit.
-3. **Endpoints.** Reuse `app/routes/app.api.drafts.tsx` to generate (it already returns JSON). Add `POST /app/api/drafts/:id/apply`, which calls `applyDraft` from plan 01, and `GET /app/api/health/:productId`, which returns `scoreCopy` for a single product.
+2. **Backend calls.** Extensions call the app server with a relative `fetch("/app/api/…")`, which resolves against the app's `application_url`. Shopify adds an `Authorization` header with an ID token automatically, and `authenticate.admin(request)` accepts it (confirmed). Extension requests come from a different origin, so wrap every response in the **`cors`** helper that `authenticate.admin` returns: `const { admin, session, cors } = await authenticate.admin(request); return cors(Response.json(…))`. Without it, the browser blocks the response.
+3. **Endpoints.** Reuse `app/routes/app.api.drafts.tsx` to generate (it already returns JSON, but it needs the `cors` wrapping from step 2). Add `POST /app/api/drafts/:id/apply`, which calls `applyDraft` from plan 01, and `GET /app/api/health/:productId`, which returns `scoreCopy` for a single product.
 4. **Modal UI.** It shows the current and new description (rendered as plain text, or as sanitised HTML in a preview area), the SEO title and meta description with character counts, and the Apply / Regenerate / Open in app buttons. Keep editing in the full app, because a modal is too small for a good HTML editor.
-5. **After applying.** Call the extension API's `close()`. If the API has a way to refresh the host page, use it, so the product form shows the new description. Otherwise tell the merchant to reload.
+5. **After applying.** An extension can't reload Shopify's product page: `forceDataRefresh` is no longer supported after API 2025-07, and there's no replacement. So:
+   - The **action** shows a success state ("Saved. Reload the page to see the new description.") with a Close button that calls `close()`.
+   - The **block** reloads its own data from the app backend after applying, so the health score updates straight away.
 6. **Deploy.** `npm run deploy` publishes extensions together with the app config.
 
 ## Edge cases
