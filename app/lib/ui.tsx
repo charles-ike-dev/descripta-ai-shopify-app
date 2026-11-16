@@ -2,6 +2,7 @@
  * Small client-safe UI helpers shared by the app routes.
  */
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { sanitizeHtml } from "./copy";
 
 const noopSubscribe = () => () => {};
 
@@ -102,6 +103,8 @@ export const STATUS_BADGE = {
   draft: { tone: "info", label: "Draft" },
   applied: { tone: "success", label: "Applied" },
   reverted: { tone: "neutral", label: "Reverted" },
+  replaced: { tone: "neutral", label: "Replaced" },
+  discarded: { tone: "neutral", label: "Discarded" },
 } as const;
 
 export function statusBadge(status: string) {
@@ -110,5 +113,61 @@ export function statusBadge(status: string) {
       tone: "neutral" as const,
       label: capitalize(status),
     }
+  );
+}
+
+/**
+ * A Polaris checkbox driven from React state. The checked state is set as a
+ * property because React 18 can only set attributes on custom elements.
+ */
+export function SelectBox({
+  label,
+  checked,
+  indeterminate = false,
+  onToggle,
+}: {
+  label: string;
+  checked: boolean;
+  indeterminate?: boolean;
+  onToggle: (checked: boolean) => void;
+}) {
+  const element = useRef<HTMLInputElement | null>(null);
+  const listen = useElementEvents({
+    change: (e) =>
+      onToggle((e.currentTarget as unknown as HTMLInputElement).checked),
+  });
+  const ref = useCallback(
+    (node: Element | null) => {
+      element.current = node as HTMLInputElement | null;
+      listen(node);
+    },
+    [listen],
+  );
+  useEffect(() => {
+    if (!element.current) return;
+    element.current.checked = checked;
+    element.current.indeterminate = indeterminate;
+  }, [checked, indeterminate]);
+
+  return <s-checkbox ref={ref} accessibilityLabel={label} />;
+}
+
+/** Product description HTML, rendered the way it reads on the storefront. */
+export function HtmlPreview({ html, empty }: { html: string; empty?: string }) {
+  if (!html.trim()) {
+    return (
+      <s-box padding="base" borderWidth="base" borderRadius="base">
+        <s-text color="subdued">{empty}</s-text>
+      </s-box>
+    );
+  }
+  return (
+    <s-box padding="large-100" borderWidth="base" borderRadius="base">
+      {/* Rendered through an allowlist sanitiser, so only simple formatting tags survive. */}
+      <div
+        className="descripta-preview"
+        dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
+      />
+    </s-box>
   );
 }
