@@ -64,6 +64,23 @@ export function stripHtml(html: string | null | undefined) {
     .trim();
 }
 
+/** Description HTML as plain text, with common entities decoded. */
+export const plainText = (html: string | null | undefined) =>
+  (html || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+
+export const countWords = (text: string) => (text ? text.split(" ").length : 0);
+
+/** Words in a description, counted the same way everywhere in the app. */
+export const wordCount = (html: string | null | undefined) =>
+  countWords(plainText(html));
+
 /** Template-based copy for demo mode (no API key). */
 export function demoCopy(
   product: ProductInput,

@@ -61,10 +61,20 @@ model Generation {
   seoDescription    String
   highlights        String    @default("[]")
   model             String
-  status            String    @default("draft") // draft | applied | reverted
+  // draft | applied | replaced (a newer draft went live) | reverted | discarded
+  status            String    @default("draft")
   createdAt         DateTime  @default(now())
   appliedAt         DateTime?
+  // The description as Shopify saved it on apply. Set only for drafts applied
+  // since this column was added, so undo knows it has something reliable to
+  // compare the live product with (older rows hold the HTML that was sent).
+  appliedHtml       String?
+  // Drafts applied together from the review queue share a batch, so they can
+  // be undone together.
+  batchId           String?
 
   @@index([shop, productId])
   @@index([shop, createdAt])
+  @@index([shop, batchId])
+  @@index([shop, status])
 }
