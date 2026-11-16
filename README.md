@@ -10,7 +10,9 @@ Built by Charles Ike as a portfolio project.
 - **AI drafts.** Sends the product's facts (title, type, vendor, tags, options, price, current description) to Claude and gets back a description, SEO title, meta description and selling points. Structured outputs guarantee valid JSON that matches a Zod schema.
 - **Brand voice.** Tone, audience, length, language, keywords to include and claims to avoid, stored per shop and applied to every generation.
 - **Review before publish.** Current copy and AI draft side by side, a Google-style search preview, live character counts, and an HTML editor.
-- **Apply and undo.** Applying calls `productUpdate`. Every draft is saved with the copy it replaced, so a change can be rolled back.
+- **Bulk drafts.** Select up to 25 products and write drafts for all of them in one run, with live progress.
+- **Review queue.** Every waiting draft in one list. Compare current and new copy, then apply or discard many drafts at once. Products edited in Shopify after their draft was written are flagged and skipped unless the merchant chooses to apply anyway.
+- **Apply and undo.** Applying calls `productUpdate`. Every draft is saved with the copy it replaced, so a change can be rolled back, one product at a time or a whole batch at once from History.
 - **Safe HTML.** Generated HTML goes through an allowlist sanitiser before it is shown or saved, so only simple formatting tags reach the store.
 - **Demo mode.** With no `ANTHROPIC_API_KEY`, copy comes from a built-in template, so the full flow can be shown for free.
 - **Privacy webhooks.** `app/uninstalled` and the mandatory GDPR topics delete all shop data.
@@ -31,14 +33,18 @@ Built by Charles Ike as a portfolio project.
 app/
   lib/
     ai.server.ts         Claude call, prompt, output schema
+    apply.ts             Pure helpers for applying and undoing drafts (unit tested)
+    bulk.tsx             Bulk draft runner shared across pages
     copy.ts              Shared types, demo template, HTML sanitiser
+    drafts.server.ts     Write, apply, undo and discard drafts
     products.server.ts   Admin GraphQL queries and productUpdate mutation
     voice.server.ts      Brand voice and shop data clean-up
   routes/
     app._index.tsx       Products dashboard
     app.products.$id.tsx Draft, edit, apply and undo for one product
+    app.review.tsx       Review queue: apply or discard many drafts at once
     app.voice.tsx        Brand voice settings with live sample
-    app.history.tsx      Every draft across the store
+    app.history.tsx      Every draft across the store, and batch undo
     webhooks.*.tsx       Uninstall and privacy webhooks
 prisma/schema.prisma     Session, BrandVoice, Generation
 shopify.app.toml         Scopes and webhook subscriptions
@@ -85,12 +91,17 @@ The app is a standard Node server, so it runs on Fly.io, Render, Railway or any 
 - Create an Anthropic API key if you want real AI copy. Each draft costs a few cents with `claude-opus-5-5`.
 - Record the demo and take screenshots in your dev store for the portfolio.
 
+## Tests
+
+```bash
+npm test
+```
+
+Unit tests (Vitest) cover the pure apply and undo logic in `app/lib/apply.ts`.
+
 ## Ideas for next steps
 
-- Bulk mode: select many products and generate drafts in a background job.
-- Image understanding: send the product photo to Claude for richer, more accurate copy.
-- Translations: write the same copy in several languages using Shopify's Translations API.
-- Usage-based billing with the Shopify Billing API.
+Feature plans live in `.plan/`, one file per feature, with the build order in `.plan/README.md`.
 
 ## Licence
 
