@@ -1,6 +1,6 @@
 # 01: Bulk review and apply
 
-**Effort:** M · **Depends on:** none
+**Effort:** M · **Depends on:** none · **Status:** built on `feat/bulk-apply`
 
 ## Why
 

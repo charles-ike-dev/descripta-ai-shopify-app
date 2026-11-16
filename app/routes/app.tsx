@@ -5,21 +5,26 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { authenticate } from "../shopify.server";
 import { BulkDraftsProvider } from "../lib/bulk";
+import { pendingDraftIds } from "../lib/drafts.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
+  const pending = await pendingDraftIds(session.shop);
 
   // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  return { apiKey: process.env.SHOPIFY_API_KEY || "", pending: pending.length };
 };
 
 export default function App() {
-  const { apiKey } = useLoaderData<typeof loader>();
+  const { apiKey, pending } = useLoaderData<typeof loader>();
 
   return (
     <AppProvider apiKey={apiKey}>
       <s-app-nav>
         <s-link href="/app">Products</s-link>
+        <s-link href="/app/review">
+          {pending ? `Review (${pending})` : "Review"}
+        </s-link>
         <s-link href="/app/voice">Brand voice</s-link>
         <s-link href="/app/history">History</s-link>
       </s-app-nav>

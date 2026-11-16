@@ -1,5 +1,5 @@
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
-import type { ProductInput } from "./copy";
+import { type ProductInput, countWords, plainText } from "./copy";
 
 type Admin = AdminApiContext;
 
@@ -32,18 +32,6 @@ export interface ProductDetail extends ProductRow {
 export const toGid = (numericId: string) =>
   `gid://shopify/Product/${numericId.replace(/\D/g, "")}`;
 export const toNumericId = (gid: string) => gid.split("/").pop() || gid;
-
-const plainText = (html: string) =>
-  html
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/\s+/g, " ")
-    .trim();
-
-const countWords = (text: string) => (text ? text.split(" ").length : 0);
 
 async function gql<T>(
   admin: Admin,
@@ -114,9 +102,7 @@ export async function scanProducts(
 ) {
   const terms = [
     opts.search?.replace(/[":\\()]/g, " ").trim(),
-    PRODUCT_STATUSES.includes(
-      opts.status as (typeof PRODUCT_STATUSES)[number],
-    )
+    PRODUCT_STATUSES.includes(opts.status as (typeof PRODUCT_STATUSES)[number])
       ? `status:${opts.status}`
       : "",
   ].filter(Boolean);
@@ -206,15 +192,46 @@ export function toProductInput(p: ProductDetail): ProductInput {
   };
 }
 
-/** Write description and SEO fields back to Shopify. */
+/**
+ * Products by GID, in the order asked for. Products that no longer exist are
+ * left out. Takes up to 250 ids (the API limit for one `nodes` query).
+ */
+export async function getProductsByIds(
+  admin: Admin,
+  gids: string[],
+): Promise<(ProductRow & { descriptionHtml: string })[]> {
+  if (gids.length === 0) return [];
+  const data = await gql<{ nodes: (RawProductNode | null)[] }>(
+    admin,
+    `#graphql
+    query DescriptaProductsByIds($ids: [ID!]!) {
+      nodes(ids: $ids) {
+        ... on Product { ${PRODUCT_ROW_FIELDS} }
+      }
+    }`,
+    { ids: gids.slice(0, 250) },
+  );
+  return data.nodes
+    .filter((node): node is RawProductNode => Boolean(node?.id))
+    .map((node) => ({ ...toRow(node), descriptionHtml: node.descriptionHtml }));
+}
+
+/**
+ * Write description and SEO fields back to Shopify. Returns the copy as
+ * Shopify saved it, which can be formatted differently from what was sent.
+ */
 export async function updateProductCopy(
   admin: Admin,
   gid: string,
   copy: { descriptionHtml: string; seoTitle: string; seoDescription: string },
-) {
+): Promise<typeof copy> {
   const data = await gql<{
     productUpdate: {
-      product: { id: string } | null;
+      product: {
+        id: string;
+        descriptionHtml: string;
+        seo: { title: string | null; description: string | null };
+      } | null;
       userErrors: { field: string[] | null; message: string }[];
     };
   }>(
@@ -222,7 +239,7 @@ export async function updateProductCopy(
     `#graphql
     mutation DescriptaUpdateProduct($product: ProductUpdateInput!) {
       productUpdate(product: $product) {
-        product { id }
+        product { id descriptionHtml seo { title description } }
         userErrors { field message }
       }
     }`,
@@ -239,4 +256,10 @@ export async function updateProductCopy(
   if (errors.length) {
     throw new Error(errors.map((e) => e.message).join("; "));
   }
+  const saved = data.productUpdate.product;
+  return {
+    descriptionHtml: saved?.descriptionHtml ?? copy.descriptionHtml,
+    seoTitle: saved?.seo.title ?? copy.seoTitle,
+    seoDescription: saved?.seo.description ?? copy.seoDescription,
+  };
 }

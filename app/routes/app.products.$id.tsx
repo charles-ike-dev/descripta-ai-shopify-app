@@ -10,11 +10,11 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { isDemoMode } from "../lib/ai.server";
-import { createDraft } from "../lib/drafts.server";
-import { getProduct, toGid, updateProductCopy } from "../lib/products.server";
-import { sanitizeHtml } from "../lib/copy";
+import { applyDraft, createDraft, revertDraft } from "../lib/drafts.server";
+import { getProduct, toGid } from "../lib/products.server";
 import {
   DateTime,
+  HtmlPreview,
   capitalize,
   fieldValue,
   modelLabel,
@@ -50,10 +50,12 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   };
 };
 
+type StaleAction = { intent: "apply" | "revert"; generationId: string };
+
 type ActionResult =
   | { ok: true; intent: "generate"; draft: Draft }
   | { ok: true; intent: "apply" | "revert" }
-  | { ok: false; error: string };
+  | { ok: false; error: string; stale?: StaleAction };
 
 interface Draft {
   id: string;
@@ -69,67 +71,50 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const gid = toGid(params.id || "");
   const form = await request.formData();
   const intent = String(form.get("intent"));
+  const field = (name: string) => {
+    const value = form.get(name);
+    return value === null ? undefined : String(value);
+  };
+  const fail = (error: string, stale?: StaleAction) =>
+    data({ ok: false, error, stale } satisfies ActionResult, {
+      status: stale ? 409 : 400,
+    });
 
   try {
-    const product = await getProduct(admin, gid);
-    if (!product) throw new Error("Product not found");
-
     if (intent === "generate") {
+      const product = await getProduct(admin, gid);
+      if (!product) throw new Error("Product not found");
       const draft = await createDraft(session.shop, product);
       return { ok: true, intent, draft } satisfies ActionResult;
     }
 
-    const generation = await db.generation.findFirst({
-      where: {
-        id: String(form.get("generationId")),
-        shop: session.shop,
-        productId: gid,
-      },
-    });
-    if (!generation) throw new Error("Draft not found");
-
-    if (intent === "apply") {
-      // The merchant may have edited the draft before applying it.
-      const copy = {
-        descriptionHtml: sanitizeHtml(
-          String(form.get("descriptionHtml") ?? generation.descriptionHtml),
-        ),
-        seoTitle: String(form.get("seoTitle") ?? generation.seoTitle).slice(
-          0,
-          70,
-        ),
-        seoDescription: String(
-          form.get("seoDescription") ?? generation.seoDescription,
-        ).slice(0, 320),
-      };
-      await updateProductCopy(admin, gid, copy);
-      await db.generation.update({
-        where: { id: generation.id },
-        data: { ...copy, status: "applied", appliedAt: new Date() },
-      });
-      return { ok: true, intent } satisfies ActionResult;
-    }
-
-    if (intent === "revert") {
-      await updateProductCopy(admin, gid, {
-        descriptionHtml: generation.previousHtml,
-        seoTitle: generation.previousSeoTitle || "",
-        seoDescription: generation.previousSeoDesc || "",
-      });
-      await db.generation.update({
-        where: { id: generation.id },
-        data: { status: "reverted" },
-      });
-      return { ok: true, intent } satisfies ActionResult;
+    if (intent === "apply" || intent === "revert") {
+      const generationId = String(form.get("generationId"));
+      const opts = { productId: gid, force: field("force") === "true" };
+      const result =
+        intent === "apply"
+          ? await applyDraft(admin, session.shop, generationId, {
+              ...opts,
+              // The merchant may have edited the draft before applying it.
+              edits: {
+                descriptionHtml: field("descriptionHtml"),
+                seoTitle: field("seoTitle"),
+                seoDescription: field("seoDescription"),
+              },
+            })
+          : await revertDraft(admin, session.shop, generationId, opts);
+      if (result.ok) return { ok: true, intent } satisfies ActionResult;
+      return fail(
+        result.error,
+        result.stale ? { intent, generationId } : undefined,
+      );
     }
 
     throw new Error("Unknown action");
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Something went wrong";
-    return data({ ok: false, error: message } satisfies ActionResult, {
-      status: 400,
-    });
+    return fail(
+      error instanceof Error ? error.message : "Something went wrong",
+    );
   }
 };
 
@@ -167,8 +152,10 @@ export default function ProductCopyPage() {
 
   useEffect(() => {
     if (fetcher.state !== "idle" || !result) return;
-    if (!result.ok) shopify.toast.show(result.error, { isError: true });
-    else if (result.intent === "generate")
+    // A stale product gets a banner with a way forward instead of a toast.
+    if (!result.ok) {
+      if (!result.stale) shopify.toast.show(result.error, { isError: true });
+    } else if (result.intent === "generate")
       shopify.toast.show("New draft ready");
     else if (result.intent === "apply") shopify.toast.show("Saved to Shopify");
     else shopify.toast.show("Previous copy restored");
@@ -179,7 +166,7 @@ export default function ProductCopyPage() {
     setView("preview");
     fetcher.submit({ intent: "generate" }, { method: "POST" });
   };
-  const apply = () =>
+  const apply = (force = false) =>
     draft &&
     fetcher.submit(
       {
@@ -188,11 +175,17 @@ export default function ProductCopyPage() {
         descriptionHtml: draft.descriptionHtml,
         seoTitle: draft.seoTitle,
         seoDescription: draft.seoDescription,
+        force: String(force),
       },
       { method: "POST" },
     );
-  const revert = (generationId: string) =>
-    fetcher.submit({ intent: "revert", generationId }, { method: "POST" });
+  const revert = (generationId: string, force = false) =>
+    fetcher.submit(
+      { intent: "revert", generationId, force: String(force) },
+      { method: "POST" },
+    );
+  const stale =
+    fetcher.state === "idle" && result && !result.ok ? result.stale : undefined;
 
   const lastApplied = history.find((h) => h.status === "applied");
   // Polaris treats any value of a boolean attribute as true, so these are
@@ -227,6 +220,33 @@ export default function ProductCopyPage() {
       {demoMode && (
         <s-banner tone="info">
           Demo mode: drafts come from a template until ANTHROPIC_API_KEY is set.
+        </s-banner>
+      )}
+
+      {stale && (
+        <s-banner
+          tone="warning"
+          heading={
+            stale.intent === "apply"
+              ? "This product changed after the draft was written"
+              : "This product changed after the draft was applied"
+          }
+        >
+          <s-paragraph>
+            {stale.intent === "apply"
+              ? "Someone edited its description or SEO listing in Shopify since. Applying the draft replaces those edits."
+              : "Someone edited its description or SEO listing in Shopify since. Undoing replaces those edits with the copy from before the draft."}
+          </s-paragraph>
+          <s-button
+            slot="secondary-actions"
+            onClick={() =>
+              stale.intent === "apply"
+                ? apply(true)
+                : revert(stale.generationId, true)
+            }
+          >
+            {stale.intent === "apply" ? "Apply anyway" : "Undo anyway"}
+          </s-button>
         </s-banner>
       )}
 
@@ -358,7 +378,7 @@ export default function ProductCopyPage() {
               <s-button
                 variant="primary"
                 icon="check"
-                onClick={apply}
+                onClick={() => apply()}
                 {...loadingIf("apply")}
                 {...disabledIf(busyIntent !== null && busyIntent !== "apply")}
               >
@@ -506,25 +526,6 @@ function Fact({ label, value }: { label: string; value: string }) {
       <s-text color="subdued">{label}</s-text>
       <s-text>{value || "Not set"}</s-text>
     </s-stack>
-  );
-}
-
-function HtmlPreview({ html, empty }: { html: string; empty?: string }) {
-  if (!html.trim()) {
-    return (
-      <s-box padding="base" borderWidth="base" borderRadius="base">
-        <s-text color="subdued">{empty}</s-text>
-      </s-box>
-    );
-  }
-  return (
-    <s-box padding="large-100" borderWidth="base" borderRadius="base">
-      {/* Rendered through an allowlist sanitiser, so only simple formatting tags survive. */}
-      <div
-        className="descripta-preview"
-        dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
-      />
-    </s-box>
   );
 }
 

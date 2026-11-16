@@ -11,8 +11,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { useRevalidator } from "react-router";
+import { useNavigate, useRevalidator } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
+import { mapLimit } from "./apply";
 
 /** Most drafts one run may write, to keep cost and waiting time in check. */
 export const MAX_BULK = 25;
@@ -25,11 +26,7 @@ export interface BulkProduct {
 }
 
 export type BulkItemStatus =
-  | "queued"
-  | "writing"
-  | "done"
-  | "failed"
-  | "cancelled";
+  "queued" | "writing" | "done" | "failed" | "cancelled";
 
 export interface BulkItem extends BulkProduct {
   status: BulkItemStatus;
@@ -65,6 +62,7 @@ export function BulkDraftsProvider({
 }) {
   const shopify = useAppBridge();
   const revalidator = useRevalidator();
+  const navigate = useNavigate();
   const [job, setJob] = useState<BulkJob | null>(null);
   const cancelled = useRef(false);
 
@@ -106,29 +104,24 @@ export function BulkDraftsProvider({
         cancelling: false,
       });
 
-      let next = 0;
       let done = 0;
       let failed = 0;
-      const worker = async () => {
-        while (!cancelled.current && next < products.length) {
-          const item = products[next++];
-          setItem(item.id, { status: "writing" });
-          try {
-            await writeDraft(item);
-            done++;
-            setItem(item.id, { status: "done" });
-          } catch (error) {
-            failed++;
-            setItem(item.id, {
-              status: "failed",
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
+      await mapLimit(products, CONCURRENCY, async (item) => {
+        // Once the merchant stops the run, items not started yet are skipped.
+        if (cancelled.current) return;
+        setItem(item.id, { status: "writing" });
+        try {
+          await writeDraft(item);
+          done++;
+          setItem(item.id, { status: "done" });
+        } catch (error) {
+          failed++;
+          setItem(item.id, {
+            status: "failed",
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
-      };
-      await Promise.all(
-        Array.from({ length: Math.min(CONCURRENCY, products.length) }, worker),
-      );
+      });
 
       setJob(
         (j) =>
@@ -144,6 +137,7 @@ export function BulkDraftsProvider({
       if (done) {
         shopify.toast.show(
           `${done} ${done === 1 ? "draft" : "drafts"} ready to review`,
+          { action: "Review", onAction: () => navigate("/app/review") },
         );
       } else if (failed) {
         shopify.toast.show("No drafts were written", { isError: true });
@@ -151,7 +145,7 @@ export function BulkDraftsProvider({
     },
     // revalidator changes identity on every navigation; the latest one is fine.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shopify, writeDraft],
+    [shopify, writeDraft, navigate],
   );
 
   // Leaving the app mid-run would abandon the remaining products.
