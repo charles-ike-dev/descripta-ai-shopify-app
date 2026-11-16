@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import {
   useLoaderData,
@@ -21,6 +21,7 @@ import {
 } from "../lib/bulk";
 import {
   DateTime,
+  SelectBox,
   capitalize,
   fieldValue,
   statusBadge,
@@ -267,7 +268,7 @@ export default function ProductsPage() {
           onDismiss={bulk.dismiss}
           onReview={() => {
             bulk.dismiss();
-            setView("draft");
+            navigate("/app/review");
           }}
         />
       )}
@@ -629,42 +630,6 @@ export default function ProductsPage() {
       </s-section>
     </s-page>
   );
-}
-
-/**
- * A Polaris checkbox driven from React state. The checked state is set as a
- * property because React 18 can only set attributes on custom elements.
- */
-function SelectBox({
-  label,
-  checked,
-  indeterminate = false,
-  onToggle,
-}: {
-  label: string;
-  checked: boolean;
-  indeterminate?: boolean;
-  onToggle: (checked: boolean) => void;
-}) {
-  const element = useRef<HTMLInputElement | null>(null);
-  const listen = useElementEvents({
-    change: (e) =>
-      onToggle((e.currentTarget as unknown as HTMLInputElement).checked),
-  });
-  const ref = useCallback(
-    (node: Element | null) => {
-      element.current = node as HTMLInputElement | null;
-      listen(node);
-    },
-    [listen],
-  );
-  useEffect(() => {
-    if (!element.current) return;
-    element.current.checked = checked;
-    element.current.indeterminate = indeterminate;
-  }, [checked, indeterminate]);
-
-  return <s-checkbox ref={ref} accessibilityLabel={label} />;
 }
 
 function BulkConfirm({
