@@ -1,10 +1,17 @@
+import { useEffect } from "react";
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { plural, summarize } from "../lib/apply";
 import { toNumericId } from "../lib/products.server";
 import { DateTime, modelLabel, statusBadge } from "../lib/ui";
+import type { action as reviewAction } from "./app.review";
+
+/** Recent batches listed above the table. */
+const BATCH_LIMIT = 5;
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -23,7 +30,46 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       appliedAt: true,
     },
   });
+
+  // Drafts applied together from the review queue, newest batch first.
+  const recent = await db.generation.findMany({
+    where: { shop: session.shop, batchId: { not: null } },
+    orderBy: { appliedAt: "desc" },
+    distinct: ["batchId"],
+    take: BATCH_LIMIT,
+    select: { batchId: true },
+  });
+  const members = await db.generation.findMany({
+    where: {
+      shop: session.shop,
+      batchId: { in: recent.map((b) => b.batchId!) },
+    },
+    orderBy: { productTitle: "asc" },
+    select: {
+      batchId: true,
+      productTitle: true,
+      status: true,
+      appliedAt: true,
+    },
+  });
+  const batches = recent.map(({ batchId }) => {
+    const items = members.filter((m) => m.batchId === batchId);
+    const appliedAt = items.reduce<Date | null>(
+      (latest, m) =>
+        m.appliedAt && (!latest || m.appliedAt > latest) ? m.appliedAt : latest,
+      null,
+    );
+    return {
+      id: batchId!,
+      total: items.length,
+      live: items.filter((m) => m.status === "applied").length,
+      titles: items.map((m) => m.productTitle),
+      appliedAt: appliedAt?.toISOString() ?? null,
+    };
+  });
+
   return {
+    batches,
     rows: rows.map((r) => ({
       ...r,
       numericId: toNumericId(r.productId),
@@ -34,11 +80,122 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export default function HistoryPage() {
-  const { rows } = useLoaderData<typeof loader>();
+  const { rows, batches } = useLoaderData<typeof loader>();
   const applied = rows.filter((r) => r.status === "applied").length;
+  const fetcher = useFetcher<typeof reviewAction>();
+  const shopify = useAppBridge();
+  const undo = (batchId: string, force = false) =>
+    fetcher.submit(
+      { intent: "undoBatch", batchId, force },
+      { method: "POST", action: "/app/review", encType: "application/json" },
+    );
+  const undoing =
+    fetcher.state !== "idle"
+      ? (fetcher.json as { batchId?: string } | undefined)?.batchId
+      : undefined;
+
+  const result = fetcher.data;
+  // Products the last undo left alone because they were edited since.
+  const skipped =
+    fetcher.state === "idle" && result?.ok && result.intent === "undoBatch"
+      ? {
+          batchId: result.batchId,
+          count: summarize(result.results).stale.length,
+        }
+      : null;
+  useEffect(() => {
+    if (fetcher.state !== "idle" || !result) return;
+    if (!result.ok) {
+      shopify.toast.show(result.error, { isError: true });
+      return;
+    }
+    if (result.intent !== "undoBatch") return;
+    const s = summarize(result.results);
+    if (s.done) {
+      shopify.toast.show(
+        `Previous copy restored for ${plural(s.done, "product")}`,
+      );
+    }
+    if (s.failed.length) {
+      shopify.toast.show(
+        `${plural(s.failed.length, "product")} could not be restored`,
+        {
+          isError: true,
+        },
+      );
+    }
+  }, [fetcher.state, result, shopify]);
 
   return (
     <s-page heading="History">
+      {skipped && skipped.count > 0 && (
+        <s-banner tone="warning" heading="Some products were left as they are">
+          <s-paragraph>
+            {plural(skipped.count, "product was", "products were")} edited in
+            Shopify after the batch was applied, so undoing would replace those
+            edits.
+          </s-paragraph>
+          <s-button
+            slot="secondary-actions"
+            onClick={() => undo(skipped.batchId, true)}
+            {...(undoing ? { disabled: true } : {})}
+          >
+            Undo anyway
+          </s-button>
+        </s-banner>
+      )}
+
+      {batches.length > 0 && (
+        <s-section heading="Applied together">
+          <s-stack direction="block" gap="small">
+            {batches.map((b, i) => (
+              <s-stack key={b.id} direction="block" gap="small">
+                {i > 0 && <s-divider />}
+                <s-stack
+                  direction="inline"
+                  gap="base"
+                  alignItems="center"
+                  justifyContent="space-between"
+                >
+                  <s-stack direction="block" gap="none" minInlineSize="0">
+                    <s-text type="strong">
+                      {plural(b.total, "product")}
+                      {b.appliedAt && (
+                        <>
+                          {" · "}
+                          <DateTime iso={b.appliedAt} />
+                        </>
+                      )}
+                    </s-text>
+                    <s-paragraph color="subdued" lineClamp={1}>
+                      {b.titles.slice(0, 3).join(", ")}
+                      {b.total > 3 && ` and ${b.total - 3} more`}
+                    </s-paragraph>
+                  </s-stack>
+                  {b.live > 0 ? (
+                    <s-button
+                      icon="undo"
+                      tone="critical"
+                      onClick={() => undo(b.id)}
+                      {...(undoing === b.id ? { loading: true } : {})}
+                      {...(undoing && undoing !== b.id
+                        ? { disabled: true }
+                        : {})}
+                    >
+                      {b.live === b.total
+                        ? "Undo batch"
+                        : `Undo ${b.live} still live`}
+                    </s-button>
+                  ) : (
+                    <s-badge>Undone</s-badge>
+                  )}
+                </s-stack>
+              </s-stack>
+            ))}
+          </s-stack>
+        </s-section>
+      )}
+
       {rows.length === 0 ? (
         <s-section>
           <s-box padding="large-200">
