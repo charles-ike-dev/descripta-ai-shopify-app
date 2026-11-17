@@ -652,8 +652,8 @@ function BulkConfirm({
           Descripta will write a new description and SEO listing for{" "}
           {count === 1 ? "this product" : `these ${count} products`} in your
           brand voice. It takes about {minutes}{" "}
-          {minutes === 1 ? "minute" : "minutes"}, and you can keep using the app
-          while it runs.
+          {minutes === 1 ? "minute" : "minutes"}. It runs on our servers, so
+          you can keep working or close the app and come back later.
         </s-paragraph>
         <s-paragraph>
           Drafts are saved for you to review. Nothing changes in your store

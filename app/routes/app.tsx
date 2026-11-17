@@ -6,17 +6,25 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
 import { BulkDraftsProvider } from "../lib/bulk";
 import { pendingDraftIds } from "../lib/drafts.server";
+import { currentJobId } from "../lib/jobs.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const pending = await pendingDraftIds(session.shop);
+  const [pending, jobId] = await Promise.all([
+    pendingDraftIds(session.shop),
+    currentJobId(session.shop),
+  ]);
 
-  // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "", pending: pending.length };
+  return {
+    // eslint-disable-next-line no-undef
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+    pending: pending.length,
+    jobId,
+  };
 };
 
 export default function App() {
-  const { apiKey, pending } = useLoaderData<typeof loader>();
+  const { apiKey, pending, jobId } = useLoaderData<typeof loader>();
 
   return (
     <AppProvider apiKey={apiKey}>
@@ -28,7 +36,7 @@ export default function App() {
         <s-link href="/app/voice">Brand voice</s-link>
         <s-link href="/app/history">History</s-link>
       </s-app-nav>
-      <BulkDraftsProvider>
+      <BulkDraftsProvider jobId={jobId}>
         <Outlet />
       </BulkDraftsProvider>
     </AppProvider>
