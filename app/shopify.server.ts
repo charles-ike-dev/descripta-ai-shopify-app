@@ -32,3 +32,10 @@ export const unauthenticated = shopify.unauthenticated;
 export const login = shopify.login;
 export const registerWebhooks = shopify.registerWebhooks;
 export const sessionStorage = shopify.sessionStorage;
+
+// Every authenticated route imports this module, so it is loaded at start-up
+// in production and on the first request in development. Imported lazily
+// because the worker itself imports this module.
+void import("./lib/worker.server")
+  .then((m) => m.startWorker())
+  .catch((error) => console.error("[worker] failed to start", error));

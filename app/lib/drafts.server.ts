@@ -9,6 +9,7 @@ import {
   copyToApply,
   mapLimit,
 } from "./apply";
+import type { GeneratedCopy } from "./copy";
 import {
   type ProductDetail,
   getProduct,
@@ -17,27 +18,41 @@ import {
 } from "./products.server";
 import { getVoice } from "./voice.server";
 
-/**
- * Writes new copy for a product in the shop's brand voice and stores it as a
- * draft. The product's current copy is saved alongside so it can be restored.
- */
-export async function createDraft(shop: string, product: ProductDetail) {
+/** Writes new copy for a product in the shop's brand voice. */
+export async function writeCopy(shop: string, product: ProductDetail) {
   const voice = await getVoice(shop);
-  const copy = await generateCopy(toProductInput(product), voice);
+  return generateCopy(toProductInput(product), voice);
+}
+
+/**
+ * The draft row for new copy. The product's current copy is saved alongside
+ * so it can be restored.
+ */
+export function draftRecord(
+  shop: string,
+  product: ProductDetail,
+  copy: GeneratedCopy,
+) {
+  return {
+    shop,
+    productId: product.id,
+    productTitle: product.title,
+    previousHtml: product.descriptionHtml,
+    previousSeoTitle: product.seoTitle,
+    previousSeoDesc: product.seoDescription,
+    descriptionHtml: copy.descriptionHtml,
+    seoTitle: copy.seoTitle,
+    seoDescription: copy.seoDescription,
+    highlights: JSON.stringify(copy.highlights),
+    model: copy.model,
+  };
+}
+
+/** Writes new copy for a product and stores it as a draft. */
+export async function createDraft(shop: string, product: ProductDetail) {
+  const copy = await writeCopy(shop, product);
   const saved = await db.generation.create({
-    data: {
-      shop,
-      productId: product.id,
-      productTitle: product.title,
-      previousHtml: product.descriptionHtml,
-      previousSeoTitle: product.seoTitle,
-      previousSeoDesc: product.seoDescription,
-      descriptionHtml: copy.descriptionHtml,
-      seoTitle: copy.seoTitle,
-      seoDescription: copy.seoDescription,
-      highlights: JSON.stringify(copy.highlights),
-      model: copy.model,
-    },
+    data: draftRecord(shop, product, copy),
   });
   return { id: saved.id, ...copy };
 }
