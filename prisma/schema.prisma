@@ -78,3 +78,58 @@ model Generation {
   @@index([shop, batchId])
   @@index([shop, status])
 }
+
+// A run of work the background worker carries out, such as writing drafts
+// for many products. It keeps going after the merchant closes the app.
+model Job {
+  id          String    @id @default(cuid())
+  shop        String
+  kind        String // draft (later: alt_text, collection, translate)
+  // queued | running | done | cancelled (no new items start, but running
+  // ones finish; finishedAt is set once nothing is left running)
+  status      String    @default("queued")
+  total       Int
+  createdAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  // Set when the merchant closes the progress banner, so it stops showing.
+  dismissedAt DateTime?
+  items       JobItem[]
+
+  @@index([shop, status])
+  @@index([shop, createdAt])
+}
+
+model JobItem {
+  id         String    @id @default(cuid())
+  jobId      String
+  job        Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  // Copied from the job so the worker can share slots fairly between shops.
+  shop       String
+  position   Int // order the merchant chose
+  resourceId String // product GID
+  title      String
+  status     String    @default("queued") // queued | running | done | failed | cancelled
+  error      String?
+  resultId   String? // Generation id
+  attempts   Int       @default(0)
+  runAfter   DateTime  @default(now()) // a retry waits, and plan 09 can delay an item
+  lockedBy   String? // id of the worker that claimed it
+  lockedAt   DateTime? // refreshed while it runs, so a stale lock means a dead worker
+
+  @@index([jobId, position])
+  @@index([status, runAfter])
+  @@index([lockedBy])
+}
+
+// Recurring work (a nightly catalog rescan, a metrics pull). When one is due,
+// the worker runs its handler, which queues ordinary jobs.
+model ScheduledTask {
+  id              String   @id @default(cuid())
+  name            String
+  shop            String? // null for app-wide tasks
+  nextRunAt       DateTime
+  intervalMinutes Int
+
+  @@index([nextRunAt])
+  @@index([name, shop])
+}
