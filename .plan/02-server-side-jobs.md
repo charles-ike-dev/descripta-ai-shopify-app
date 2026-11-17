@@ -1,6 +1,6 @@
 # 02: Server-side bulk jobs
 
-**Effort:** L · **Depends on:** none · **Unblocks:** 09, the nightly tasks in 11 and 18, and larger runs for 05, 06 and 07
+**Effort:** L · **Depends on:** none · **Status:** built on `feat/server-jobs` · **Unblocks:** 09, the nightly tasks in 11 and 18, and larger runs for 05, 06 and 07
 
 ## Why
 

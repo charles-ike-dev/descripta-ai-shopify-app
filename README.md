@@ -10,7 +10,7 @@ Built by Charles Ike as a portfolio project.
 - **AI drafts.** Sends the product's facts (title, type, vendor, tags, options, price, current description) to Claude and gets back a description, SEO title, meta description and selling points. Structured outputs guarantee valid JSON that matches a Zod schema.
 - **Brand voice.** Tone, audience, length, language, keywords to include and claims to avoid, stored per shop and applied to every generation.
 - **Review before publish.** Current copy and AI draft side by side, a Google-style search preview, live character counts, and an HTML editor.
-- **Bulk drafts.** Select up to 25 products and write drafts for all of them in one run, with live progress.
+- **Bulk drafts.** Select up to 250 products and write drafts for all of them in one run, with live progress. A background worker on the server writes the drafts, so the run keeps going after the merchant closes the app, survives restarts, and retries rate limits and server errors.
 - **Review queue.** Every waiting draft in one list. Compare current and new copy, then apply or discard many drafts at once. Products edited in Shopify after their draft was written are flagged and skipped unless the merchant chooses to apply anyway.
 - **Apply and undo.** Applying calls `productUpdate`. Every draft is saved with the copy it replaced, so a change can be rolled back, one product at a time or a whole batch at once from History.
 - **Safe HTML.** Generated HTML goes through an allowlist sanitiser before it is shown or saved, so only simple formatting tags reach the store.
@@ -34,19 +34,23 @@ app/
   lib/
     ai.server.ts         Claude call, prompt, output schema
     apply.ts             Pure helpers for applying and undoing drafts (unit tested)
-    bulk.tsx             Bulk draft runner shared across pages
+    bulk.tsx             Starts bulk runs and polls their progress
     copy.ts              Shared types, demo template, HTML sanitiser
     drafts.server.ts     Write, apply, undo and discard drafts
+    jobs.ts              Pure job helpers: retries, backoff, fair claiming (unit tested)
+    jobs.server.ts       Create, read, cancel and dismiss jobs
     products.server.ts   Admin GraphQL queries and productUpdate mutation
     voice.server.ts      Brand voice and shop data clean-up
+    worker.server.ts     Background worker that runs queued job items
   routes/
     app._index.tsx       Products dashboard
     app.products.$id.tsx Draft, edit, apply and undo for one product
     app.review.tsx       Review queue: apply or discard many drafts at once
     app.voice.tsx        Brand voice settings with live sample
     app.history.tsx      Every draft across the store, and batch undo
+    app.api.jobs*.tsx    Start, poll, cancel and dismiss bulk runs
     webhooks.*.tsx       Uninstall and privacy webhooks
-prisma/schema.prisma     Session, BrandVoice, Generation
+prisma/schema.prisma     Session, BrandVoice, Generation, Job, JobItem, ScheduledTask
 shopify.app.toml         Scopes and webhook subscriptions
 ```
 
@@ -83,7 +87,8 @@ The app is a standard Node server, so it runs on Fly.io, Render, Railway or any 
    npm run setup   # prisma generate and migrate deploy
    npm run start
    ```
-4. **Point Shopify at it.** Set `application_url` and the redirect URL in `shopify.app.toml` to your public URL, then run `npm run deploy` to push the config and webhooks.
+4. **Background jobs.** The worker runs inside the web server and starts with it. Items are claimed with a conditional update, so several instances can share one Postgres database safely. Optional settings: `JOBS_CONCURRENCY` (items one instance runs at once, default 4; each shop is capped at 2) and `JOBS_WORKER=off` to turn the worker off on an instance.
+5. **Point Shopify at it.** Set `application_url` and the redirect URL in `shopify.app.toml` to your public URL, then run `npm run deploy` to push the config and webhooks.
 
 ## What you must do yourself
 
@@ -97,7 +102,7 @@ The app is a standard Node server, so it runs on Fly.io, Render, Railway or any 
 npm test
 ```
 
-Unit tests (Vitest) cover the pure apply and undo logic in `app/lib/apply.ts`.
+Unit tests (Vitest) cover the pure apply and undo logic in `app/lib/apply.ts` and the job helpers in `app/lib/jobs.ts`.
 
 ## Ideas for next steps
 
